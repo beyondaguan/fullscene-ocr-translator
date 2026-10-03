@@ -15,11 +15,16 @@ extension/.vite/
 
 # ---- 模型权重 ----
 # 策略：根目录 models/ 入库（PP-OCRv6 onnx 共 31MB，一次性）。
+# 注意写法：不能写 `models/`（整目录排除），否则 git 无法再反选内部文件
+# （git 不会进入已排除的目录）。必须用 `models/*` + `!` 反选。
 # crates/core/models/ 是同一批文件的硬链接副本，重复占 31MB，故排除。
 # 如需改用 git-lfs：git lfs track "*.onnx"
-models/
-!models/ppocrv6/*.onnx
-!models/ppocrv6/*.txt
+models/*
+!models/ppocrv6/
+models/ppocrv6/*
+!models/ppocrv6/pp-ocrv6_small_det.onnx
+!models/ppocrv6/pp-ocrv6_small_rec.onnx
+!models/ppocrv6/ppocrv6_dict.txt
 crates/core/models/
 
 # ---- 运行日志 / 临时产物 ----
