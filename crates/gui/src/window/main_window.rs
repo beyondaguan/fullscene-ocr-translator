@@ -417,6 +417,62 @@ impl AppState {
             .map_err(|e| e.to_string())
     }
 
+    /// 本地图片 OCR：解码 base64 图片 → OCR → 复用 [`Self::pipeline_after_ocr`] 翻译落库。
+    ///
+    /// 与截图管线共用同一收尾（翻译/回填/历史），保证两条入口行为一致。
+    /// `base64` 为 PNG/JPG 等常见位图的 base64 文本（不含 `data:` 前缀也可）。
+    pub fn translate_image_bytes(
+        &self,
+        base64_data: &str,
+        src: &str,
+        dst: &str,
+    ) -> std::result::Result<(String, String), String> {
+        use base64::Engine as _;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(base64_data.trim())
+            .map_err(|e| format!("图片解码失败: {e}"))?;
+        let img = image::load_from_memory(&bytes).map_err(|e| format!("图片读取失败: {e}"))?;
+        let rgba = img.to_rgba8();
+        let raw = fs_core::types::RawImage {
+            width: rgba.width(),
+            height: rgba.height(),
+            data: rgba.into_raw(),
+            format: fs_core::types::PixelFormat::Rgba,
+        };
+        let lines = self
+            .ocr
+            .lock()
+            .unwrap()
+            .recognize(&raw)
+            .map_err(|e| format!("识别失败: {e}"))?;
+        let text: String = lines
+            .iter()
+            .map(|l| l.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        crate::log::line(&format!(
+            "image: ocr {} lines / {} chars",
+            lines.len(),
+            text.chars().count()
+        ));
+        if text.trim().is_empty() {
+            return Err("图片中未识别到文字".into());
+        }
+        // OCR 成功先落盘原文：翻译可能失败，但原文至少可见，便于排查。
+        if let Ok(mut g) = self.gui_result.lock() {
+            g.original = text.clone();
+            g.source_lang = src.to_string();
+            g.updated_at_ms = now_ms();
+        }
+        self.pipeline_after_ocr(&text, src, dst)
+    }
+
+    /// 多轮对话：转交 [`Translator::chat`]，由可用的 OpenAI 兼容引擎（SiliconFlow / OpenAI）应答。
+    pub fn chat(&self, messages: &[fs_core::translate::ChatMessage]) -> Result<String> {
+        let tr = self.translator.lock().unwrap();
+        tr.chat(messages)
+    }
+
     /// 完整管线：源/目标语言由调用方指定（默认 `"auto"`/`"zh"` 见 [`Self::screenshot_translate`](crate::commands)）。
     ///
     /// 前端命令条的语言选择器经此传入；返回 `(原文, 译文)`，两者都要回传前端——
@@ -469,15 +525,29 @@ impl AppState {
             g.source_lang = src.to_string();
             g.updated_at_ms = now_ms();
         }
+        // 3~5 步：翻译 + 落共享结果 + 落历史库（与「本地图片 OCR」共用同一收尾路径）。
+        self.pipeline_after_ocr(&text, src, dst)
+    }
+
+    /// OCR 得到原文之后的共用收尾：翻译 → 写入共享结果 → 落历史库。
+    ///
+    /// 截图管线与「本地图片 OCR」都只负责「把图像变成 `text`」，之后这同一段
+    /// 决定翻译、回填、落库，避免两处各写一份导致历史/引擎信息不一致。
+    fn pipeline_after_ocr(
+        &self,
+        text: &str,
+        src: &str,
+        dst: &str,
+    ) -> std::result::Result<(String, String), String> {
         // 3. 翻译
         //    短路：OCR 出来的已经是中文、目标也是中文时**不要**发请求——
         //    MyMemory / Google 会回 403「PLEASE SELECT TWO DISTINCT LANGUAGES」，
         //    降级链一路失败，用户看到「翻译失败」，而实际上只是无需翻译。
         //    走 detailed 版以拿到「实际服务引擎」，写入共享结果供状态栏显示。
-        let outcome = if fs_core::lang::is_chinese_target(dst) && fs_core::lang::is_mostly_cjk(&text) {
+        let outcome = if fs_core::lang::is_chinese_target(dst) && fs_core::lang::is_mostly_cjk(text) {
             crate::log::line("pipe: 原文已是中文，跳过翻译直接回填");
             fs_core::translate::TranslationOutcome {
-                text: text.clone(),
+                text: text.to_string(),
                 engine: "none".into(),
                 position: None,
                 chain_len: 0,
@@ -488,7 +558,7 @@ impl AppState {
             // 让真正有用的结构化日志行被埋在几百行 OCR 文本里（2026-10-03 踩过）。
             let preview: String = text.chars().take(60).collect();
             let o = self
-                .translate_detailed(&text, src, dst)
+                .translate_detailed(text, src, dst)
                 .map_err(|e| format!("翻译失败: {e}（原文前 60 字：{preview}）"))?;
             crate::log::line(&format!(
                 "pipe: translated {} chars by engine={} (chain {}/{})",
@@ -502,7 +572,7 @@ impl AppState {
         let t = outcome.text.clone();
         // 4. 写入共享结果
         if let Ok(mut g) = self.gui_result.lock() {
-            g.original = text.clone();
+            g.original = text.to_string();
             g.translation = t.clone();
             g.source_lang = src.to_string();
             g.engine = outcome.engine.clone();
@@ -514,11 +584,11 @@ impl AppState {
         // 5. 落历史库：每次完整翻译（含「已是中文跳过」）都记录，供历史抽屉回溯。
         //    写入失败只记日志、绝不影响主流程——历史是辅助能力，不能拖垮翻译。
         if let Ok(db) = history_db() {
-            if let Err(e) = db.insert_history(&text, &t, &outcome.engine) {
+            if let Err(e) = db.insert_history(text, &t, &outcome.engine) {
                 crate::log::line(&format!("pipe: 历史写入失败（已忽略）: {e}"));
             }
         }
-        Ok((text, t))
+        Ok((text.to_string(), t))
     }
 }
 

@@ -106,7 +106,7 @@ export function AppShell({
   const groups: RailItem[][] = [
     [
       { key: 'screenshot', label: '截图', kind: 'mode', icon: <IconScreenshot />, title: '截图翻译（Alt+Q 框选 · Ctrl+Alt+O 整屏）' },
-      { key: 'image', label: '图片', kind: 'action', icon: <IconImage />, disabled: disabled.has('image'), title: '打开本地图片（开发中）' },
+      { key: 'image', label: '图片', kind: 'action', icon: <IconImage />, disabled: disabled.has('image'), title: '打开本地图片进行 OCR 翻译' },
       { key: 'paste', label: '粘贴', kind: 'action', icon: <IconPaste />, disabled: disabled.has('paste'), title: '从剪贴板读取文本（Ctrl+V）' },
     ],
     [

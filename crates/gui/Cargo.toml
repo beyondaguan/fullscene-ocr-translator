@@ -25,6 +25,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 fs-core = { path = "../core" }
 dirs = { workspace = true }
+image = { workspace = true }
+base64 = "0.22"
 
 # 全局热键 / 托盘 / 截图在软件主体侧注册（core 已提供能力）
 [target.'cfg(windows)'.dependencies]

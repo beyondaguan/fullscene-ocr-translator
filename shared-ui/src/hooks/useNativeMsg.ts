@@ -49,6 +49,10 @@ export interface NativeMsgApi {
   testEngine: (id: string, text?: string) => Promise<string>;
   translateText: (text: string, src: string, dst: string) => Promise<string>;
   screenshotTranslate: (src?: string, dst?: string) => Promise<ShotResult>;
+  /** 本地图片 OCR：前端把图片读成 base64 传进来，Rust 解码→OCR→翻译→回传原文+译文 */
+  translateImageBytes: (base64: string, src?: string, dst?: string) => Promise<ShotResult>;
+  /** AI 对话：传入完整对话历史，由可用对话引擎（SiliconFlow / OpenAI）生成回复 */
+  chat: (messages: { role: string; content: string }[]) => Promise<string>;
   getHistory: (limit: number) => Promise<unknown[]>;
   /** 拉取最近一次管线结果：事件丢失时的权威兜底来源 */
   getResult: () => Promise<PipelineSnapshot>;
@@ -91,6 +95,13 @@ export function createNativeMsgApi(): NativeMsgApi {
     translateText: (text, src, dst) => invoke('translate_text', { text, src, dst }) as Promise<string>,
     screenshotTranslate: (src, dst) =>
       invoke('screenshot_translate', { src: src ?? null, dst: dst ?? null }) as Promise<ShotResult>,
+    translateImageBytes: (base64, src, dst) =>
+      invoke('translate_image_bytes', {
+        base64,
+        src: src ?? null,
+        dst: dst ?? null,
+      }) as Promise<ShotResult>,
+    chat: (messages) => invoke('chat', { messages }) as Promise<string>,
     getHistory: (limit) => invoke('get_history', { limit }) as Promise<unknown[]>,
     getResult: () => invoke('get_result') as Promise<PipelineSnapshot>,
     clearHistory: () => invoke('clear_history').then(() => undefined),

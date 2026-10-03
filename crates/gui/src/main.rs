@@ -40,6 +40,8 @@ fn main() {
             commands::test_engine,
             commands::translate_text,
             commands::screenshot_translate,
+            commands::translate_image_bytes,
+            commands::chat,
             commands::get_history,
             commands::get_result,
             commands::clear_history,

@@ -215,6 +215,9 @@ mod tests {
                 m
             },
             ui_theme: Some("light".into()),
+            ui_font: None,
+            ui_font_scale: None,
+            ui_accent: None,
             translate: Some(TranslateConfig {
                 fallback_order: vec!["openai".into(), "edge".into()],
                 siliconflow_key: Some("sk-sf".into()),
@@ -237,6 +240,9 @@ mod tests {
                 llm_model: None,
                 hotkeys: HashMap::new(),
                 ui_theme: None,
+                ui_font: None,
+                ui_font_scale: None,
+                ui_accent: None,
                 translate: None
             }
         );

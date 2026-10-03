@@ -82,6 +82,9 @@ function Root() {
   const configRef = React.useRef<SettingsData>({});
   configRef.current = config;
 
+  // 本地图片 OCR 用：隐藏的 <input type=file>，点击「图片」按钮时触发。
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
   // 外观（明暗 / 强调色 / 字体 / 字号缩放）。必须在 config state 之后声明：
   // useTheme 以 config.json 的值为初值，顺序反了读不到。
   // onChange 把用户改动写回 Rust 持久化（localStorage 已先写一份，保证即时生效）。
@@ -325,16 +328,61 @@ function Root() {
     }
   }, [api, source, effectiveSrc, dstLang]);
 
+  // 把 File 读成 base64（去掉 data: 前缀），交给 Rust 解码 + OCR。
+  const fileToBase64 = React.useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = (reader.result as string) ?? '';
+        const comma = result.indexOf(',');
+        resolve(comma >= 0 ? result.slice(comma + 1) : result);
+      };
+      reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  // 「图片」按钮：弹出系统文件选择器，选中的图走本地 OCR 翻译。
+  const doImage = React.useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const onImageFile = React.useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      // 清空 value，保证同一文件可被重复选中触发 onChange。
+      e.target.value = '';
+      if (!file) return;
+      setLoading(true);
+      setError(undefined);
+      try {
+        const b64 = await fileToBase64(file);
+        const r = await api.translateImageBytes(b64, effectiveSrc, dstLang);
+        setSource(r.source);
+        setTranslation(r.translation);
+        api.getHistory(50).then((h) => setHistory(h as HistoryItem[])).catch(() => {});
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [api, effectiveSrc, dstLang],
+  );
+
   const toggleDrawer = React.useCallback((key: DrawerKey) => {
     setActiveDrawer((cur) => (cur === key ? null : key));
   }, []);
 
   const sendChat = React.useCallback(
     async (text: string) => {
-      setChatMessages((m) => [...m, { role: 'user', content: text }]);
+      const next: ChatMessage[] = [...chatMessages, { role: 'user', content: text }];
+      setChatMessages(next);
       setChatStreaming(true);
       try {
-        const reply = await api.translateText(text, effectiveSrc ?? 'auto', dstLang);
+        // 把完整对话历史交给后端，由可用对话引擎（SiliconFlow / OpenAI）生成回复，
+        // 而非「把输入再翻译一遍」。
+        const reply = await api.chat(next);
         setChatMessages((m) => [...m, { role: 'assistant', content: reply }]);
       } catch (e) {
         setChatMessages((m) => [...m, { role: 'assistant', content: `错误: ${String(e)}` }]);
@@ -342,7 +390,7 @@ function Root() {
         setChatStreaming(false);
       }
     },
-    [api, effectiveSrc, dstLang],
+    [api, chatMessages],
   );
 
   const saveConfig = React.useCallback(
@@ -437,6 +485,9 @@ function Root() {
         case 'history':
           toggleDrawer('history');
           break;
+        case 'image':
+          doImage();
+          break;
         case 'chat':
           toggleDrawer('chat');
           break;
@@ -455,6 +506,10 @@ function Root() {
 
   const engineLabel = ENGINES.find((e) => e.value === engine)?.label ?? engine;
   const charCount = countChars(source) + countChars(translation);
+  // 面板内「朗读」是否可用：WebView2（Chromium）原生支持 speechSynthesis，
+  // 故只要全局 API 存在就放开，不再默认置灰。
+  const ttsSupported =
+    typeof window !== 'undefined' && typeof (window as unknown as { speechSynthesis?: unknown }).speechSynthesis !== 'undefined';
   // 降级链的可读文本（状态栏 tooltip 用）：把 id 翻成 label，未知 id 原样显示。
   const fallbackChainLabel = (config.translate?.fallback_order ?? [])
     .map((id: string) => engines.find((e) => e.id === id)?.label ?? id)
@@ -547,7 +602,7 @@ function Root() {
       mode={mode}
       activeDrawer={activeDrawer}
       onAction={onAction}
-      railDisabled={['image']}
+      railDisabled={[]}
       statusLeft={statusLeft}
       statusRight={statusRight}
       drawers={drawers}
@@ -568,6 +623,15 @@ function Root() {
         onRetranslate={doRetranslate}
         onCopy={doCopy}
         onSpeak={doSpeak}
+        speakSupported={ttsSupported}
+      />
+      {/* 本地图片 OCR 用：隐藏的文件选择器，点击「图片」按钮时触发 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={onImageFile}
       />
     </AppShell>
   );

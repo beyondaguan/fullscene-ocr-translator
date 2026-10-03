@@ -23,6 +23,15 @@ pub struct EngineInfo {
     pub available: bool,
 }
 
+/// 单条对话消息（AI 助手抽屉 → Rust 后端 → 对话引擎）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChatMessage {
+    /// 角色：`system` / `user` / `assistant`
+    pub role: String,
+    /// 消息正文
+    pub content: String,
+}
+
 /// 翻译编排器：持有注册表与降级链，对外暴露 `translate` / `translate_with`。
 pub struct Translator {
     registry: Registry,
@@ -103,6 +112,26 @@ impl Translator {
     /// 当前降级链。
     pub fn fallback_order(&self) -> &[String] {
         &self.fallback_order
+    }
+
+    /// 多轮对话：调用首个「可用且支持对话」的 OpenAI 兼容引擎（SiliconFlow / OpenAI）。
+    ///
+    /// 顺序固定为 siliconflow → openai：两者都走 `/v1/chat/completions`，
+    /// 但其它引擎（MyMemory / Google / 本地 LLM Ollama 的 generate 接口）不支持对话。
+    /// 任一可用引擎调用失败会自动尝试下一个；二者都无密钥则给出明确提示而非静默失败。
+    pub fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
+        for id in ["siliconflow", "openai"] {
+            if let Some(e) = self.registry.get(id) {
+                if e.available() {
+                    if let Ok(r) = e.chat(messages) {
+                        return Ok(r);
+                    }
+                }
+            }
+        }
+        Err(AppError::Translate(
+            "没有可用的对话引擎：请在设置中配置 SiliconFlow 或 OpenAI 密钥".into(),
+        ))
     }
 }
 

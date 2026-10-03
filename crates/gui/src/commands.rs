@@ -129,6 +129,50 @@ pub fn screenshot_translate(
         .map(|(source, translation)| ShotResult { source, translation })
 }
 
+/// 本地图片 OCR：前端把图片读成 base64 传进来，Rust 解码 → OCR → 翻译 → 回传原文+译文。
+///
+/// 走 [`AppState::translate_image_bytes`]，与截图管线共用同一翻译/落库路径，
+/// 因此历史抽屉同样会记录这次图片翻译。
+#[tauri::command]
+pub fn translate_image_bytes(
+    state: State<'_, AppState>,
+    base64: String,
+    src: Option<String>,
+    dst: Option<String>,
+) -> Result<ShotResult, String> {
+    let s = src.unwrap_or_else(|| "auto".into());
+    let d = dst.unwrap_or_else(|| "zh".into());
+    state
+        .translate_image_bytes(&base64, &s, &d)
+        .map(|(source, translation)| ShotResult { source, translation })
+}
+
+/// 单条对话消息（AI 助手抽屉 → 后端）。
+#[derive(serde::Deserialize)]
+pub struct ChatMessageInput {
+    pub role: String,
+    pub content: String,
+}
+
+/// AI 对话：把完整对话历史交给可用的对话引擎（SiliconFlow / OpenAI）生成回复。
+///
+/// 与 `translate_text`（翻译）完全独立：这里走 `/v1/chat/completions`，保留多轮上下文，
+/// 而非「把输入再翻译一遍」。无可用对话密钥时返回明确错误而非静默空响应。
+#[tauri::command]
+pub fn chat(
+    state: State<'_, AppState>,
+    messages: Vec<ChatMessageInput>,
+) -> Result<String, String> {
+    let msgs: Vec<fs_core::translate::ChatMessage> = messages
+        .into_iter()
+        .map(|m| fs_core::translate::ChatMessage {
+            role: m.role,
+            content: m.content,
+        })
+        .collect();
+    state.chat(&msgs).map_err(|e| e.to_string())
+}
+
 // 2026-10-03：框选相关命令（open_selection / close_selection / selection_done）整体下线。
 // 根因：overlay 依赖全屏透明 + 无边框 + 置顶窗口（tao/Windows），从未真机验证通过、
 // 且为真机崩溃源之一；框选功能已从前端工具栏与快捷键一并移除。

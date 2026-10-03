@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::error::{AppError, Result};
 use crate::translate::base::TranslateBase;
 use crate::translate::http::agent;
+use crate::translate::ChatMessage;
 use serde_json::json;
 use std::time::Duration;
 
@@ -53,6 +54,48 @@ fn chat_translate(
         .and_then(|m| m.get("content"))
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::Translate("模型响应缺少 choices[0].message.content".into()))?;
+    Ok(content.trim().to_string())
+}
+
+/// 调用 OpenAI 兼容 `/chat/completions` 进行多轮对话（AI 助手抽屉）。
+///
+/// `messages` 为完整对话历史（系统/用户/助手角色），由上层按时间顺序组装。
+/// 与 [`chat_translate`] 共用同一协议与鉴权头，只是系统提示换成通用助手、温度略高。
+fn chat_completion(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    messages: &[ChatMessage],
+) -> Result<String> {
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let msgs: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|m| json!({"role": m.role, "content": m.content}))
+        .collect();
+    let body = json!({
+        "model": model,
+        "messages": msgs,
+        "temperature": 0.7,
+        "stream": false,
+    });
+
+    let resp = agent(Duration::from_secs(120))
+        .post(&url)
+        .set("Authorization", &format!("Bearer {api_key}"))
+        .set("Content-Type", "application/json")
+        .send_json(body)
+        .map_err(|e| AppError::Translate(format!("对话接口请求失败: {e}")))?;
+
+    let parsed: serde_json::Value = resp
+        .into_json()
+        .map_err(|e| AppError::Translate(format!("对话响应解析失败: {e}")))?;
+    let content = parsed
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::Translate("对话响应缺少 choices[0].message.content".into()))?;
     Ok(content.trim().to_string())
 }
 
@@ -113,6 +156,14 @@ impl TranslateBase for SiliconFlowEngine {
             .ok_or_else(|| AppError::Translate("SiliconFlow 未配置密钥".into()))?;
         chat_translate(&self.base_url, &key, &self.model, text, src, dst)
     }
+
+    fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
+        let key = self
+            .api_key
+            .clone()
+            .ok_or_else(|| AppError::Translate("SiliconFlow 未配置密钥".into()))?;
+        chat_completion(&self.base_url, &key, &self.model, messages)
+    }
 }
 
 /// OpenAI 官方 / 任意 OpenAI 兼容网关。
@@ -167,6 +218,14 @@ impl TranslateBase for OpenAiEngine {
             .clone()
             .ok_or_else(|| AppError::Translate("OpenAI 未配置密钥".into()))?;
         chat_translate(&self.base_url, &key, &self.model, text, src, dst)
+    }
+
+    fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
+        let key = self
+            .api_key
+            .clone()
+            .ok_or_else(|| AppError::Translate("OpenAI 未配置密钥".into()))?;
+        chat_completion(&self.base_url, &key, &self.model, messages)
     }
 }
 

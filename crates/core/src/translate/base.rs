@@ -3,7 +3,8 @@
 //! 每个引擎是一个 drop-in 实现：实现本 trait 并注册到 [`crate::translate::Registry`]
 //! 即可被翻译路由器发现，无需修改任何编排代码（参照 WinOCR 3.4 的引擎 ABC + 注册表）。
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
+use crate::translate::ChatMessage;
 
 /// 翻译引擎抽象基类。
 ///
@@ -38,4 +39,12 @@ pub trait TranslateBase: Send + Sync {
 
     /// 单次翻译。失败返回 [`crate::error::AppError::Translate`]。
     fn translate(&self, text: &str, src: &str, dst: &str) -> Result<String>;
+
+    /// 多轮对话（AI 助手抽屉用）。默认实现返回「不支持」，
+    /// 只有 OpenAI 兼容的对话模型（SiliconFlow / OpenAI）才覆写。
+    ///
+    /// `messages` 为完整对话历史（含系统/用户/助手角色），由调用方按时间顺序组装。
+    fn chat(&self, _messages: &[ChatMessage]) -> Result<String> {
+        Err(AppError::Translate(format!("引擎 {} 不支持对话", self.id())))
+    }
 }
