@@ -22,7 +22,7 @@ impl LocalLlmEngine {
             model: cfg
                 .llm_model
                 .clone()
-                .unwrap_or_else(|| "qwen2.5".into()),
+                .unwrap_or_else(|| "HY-MT1.5-1.8B:Q4_K_M".into()),
         }
     }
 }
@@ -45,7 +45,7 @@ impl TranslateBase for LocalLlmEngine {
         llm_translate::translate(&client, text, src, dst)
     }
 
-    /// 多轮对话：走 Ollama 的 OpenAI 兼容端点 `/v1/chat/completions`（通用模型，如 qwen2.5），
+    /// 多轮对话：走 Ollama 的 OpenAI 兼容端点 `/v1/chat/completions`（默认 HY-MT1.5-1.8B:Q4_K_M），
     /// 与翻译用的 `/api/generate` 区分。本地模型离线免费，作为 AI 助手首选引擎。
     fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
         let client = LlmClient::new(self.endpoint.clone(), self.model.clone());
@@ -112,7 +112,7 @@ mod tests {
         let (handle, endpoint) = start_mock_ollama_chat(body);
         let cfg = Config {
             llm_endpoint: Some(endpoint),
-            llm_model: Some("qwen2.5".into()),
+            llm_model: Some("HY-MT1.5-1.8B:Q4_K_M".into()),
             ..Default::default()
         };
         let engine = LocalLlmEngine::from_config(&cfg);

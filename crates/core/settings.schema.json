@@ -15,7 +15,7 @@
     },
     "llm_model": {
       "type": ["string", "null"],
-      "description": "本地大模型名（默认 qwen2.5）"
+      "description": "本地大模型名（默认 HY-MT1.5-1.8B:Q4_K_M）"
     },
     "hotkeys": {
       "type": "object",

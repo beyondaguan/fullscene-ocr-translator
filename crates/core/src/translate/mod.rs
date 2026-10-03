@@ -117,7 +117,7 @@ impl Translator {
     /// 多轮对话：调用首个「可用且支持对话」的引擎。
     ///
     /// 尝试顺序固定为 local-llm → siliconflow → openai：
-    /// - **local-llm（Ollama qwen2.5 通用模型）**：本地离线、免费优先，现支持对话
+    /// - **local-llm（Ollama HY-MT1.5-1.8B:Q4_K_M 轻量模型）**：本地离线、免费优先，现支持对话
     ///   （走 Ollama `/v1/chat/completions`，不再复用翻译用的 `/api/generate`）。
     /// - **siliconflow / openai**：仅作云端兜底（需配置密钥，用各自的通用对话模型）。
     ///

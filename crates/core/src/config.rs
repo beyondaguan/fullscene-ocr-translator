@@ -103,7 +103,7 @@ pub struct Config {
     pub ocr_model_dir: Option<String>,
     /// 本地大模型端点（Ollama 默认端口）
     pub llm_endpoint: Option<String>,
-    /// Ollama 模型名（默认 qwen2.5）
+    /// Ollama 模型名（默认 HY-MT1.5-1.8B:Q4_K_M，本地可流畅运行的轻量翻译模型）
     pub llm_model: Option<String>,
     /// 全局动作热键表：动作 id（如 `fullscreen_translate`）→ 组合键（如 `Ctrl+Alt+O`）。
     /// 缺省回落 [`DEFAULT_HOTKEYS`]。旧配置的单 `hotkey` 字段在 [`load`] 时自动迁移到
@@ -138,7 +138,7 @@ impl Default for Config {
         Self {
             ocr_model_dir: None,
             llm_endpoint: Some("http://127.0.0.1:11434".to_string()),
-            llm_model: Some("qwen2.5".to_string()),
+            llm_model: Some("HY-MT1.5-1.8B:Q4_K_M".to_string()),
             hotkeys: HashMap::new(),
             ui_theme: Some("dark".to_string()),
             ui_font: None,
@@ -199,10 +199,10 @@ mod tests {
 
     #[test]
     fn default_config_uses_ollama_endpoint() {
-        // oracle: 未配置时默认指向本机 Ollama 11434，模型 qwen2.5，热键表为空（用代码内置默认）
+        // oracle: 未配置时默认指向本机 Ollama 11434，模型 HY-MT1.5-1.8B:Q4_K_M，热键表为空（用代码内置默认）
         let cfg = Config::default();
         assert_eq!(cfg.llm_endpoint.as_deref(), Some("http://127.0.0.1:11434"));
-        assert_eq!(cfg.llm_model.as_deref(), Some("qwen2.5"));
+        assert_eq!(cfg.llm_model.as_deref(), Some("HY-MT1.5-1.8B:Q4_K_M"));
         assert!(cfg.hotkeys.is_empty());
         assert_eq!(cfg.ocr_model_dir, None);
         assert_eq!(cfg.translate, None);

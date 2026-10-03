@@ -73,7 +73,7 @@ impl LlmClient {
     /// body 为 `{"model":self.model,"messages":[...],"stream":false}`，
     /// 解析 `choices[0].message.content`（与 openai_compat.rs 的 `chat_completion` 同协议）。
     ///
-    /// 对话走通用模型（如 qwen2.5），与 [`complete`] 的 `/api/generate` 翻译补全接口区分。
+    /// 对话走通用模型（如 HY-MT1.5-1.8B:Q4_K_M），与 [`complete`] 的 `/api/generate` 翻译补全接口区分。
     /// 服务未启动 / 超时 / 非 2xx 均返回 [`AppError::Translate`]。超时 120s。
     pub fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
         let url = format!(
@@ -183,9 +183,9 @@ mod tests {
 
     #[test]
     fn complete_returns_model_response() {
-        let resp_json = r#"{"model":"qwen2.5","response":"你好","done":true}"#;
+        let resp_json = r#"{"model":"HY-MT1.5-1.8B:Q4_K_M","response":"你好","done":true}"#;
         let (handle, endpoint) = start_mock_ollama(resp_json);
-        let client = LlmClient::new(&endpoint, "qwen2.5");
+        let client = LlmClient::new(&endpoint, "HY-MT1.5-1.8B:Q4_K_M");
         let out = client.complete("translate hi").expect("请求失败");
         assert_eq!(out, "你好");
         drop(handle); // 关闭服务器线程
@@ -198,7 +198,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         drop(listener);
 
-        let client = LlmClient::new(format!("http://{}", addr), "qwen2.5");
+        let client = LlmClient::new(format!("http://{}", addr), "HY-MT1.5-1.8B:Q4_K_M");
         let err = client.complete("hi").expect_err("应返回错误");
         assert!(matches!(err, AppError::Translate(_)), "应包装为 Translate 错误: {err}");
     }
@@ -206,9 +206,9 @@ mod tests {
     #[test]
     fn non_200_status_returns_error() {
         // mock 固定返回 200；此测试验证 done=false 分支 -> 应报错
-        let resp_json = r#"{"model":"qwen2.5","response":"","done":false}"#;
+        let resp_json = r#"{"model":"HY-MT1.5-1.8B:Q4_K_M","response":"","done":false}"#;
         let (_handle, endpoint2) = start_mock_ollama(resp_json);
-        let client = LlmClient::new(&endpoint2, "qwen2.5");
+        let client = LlmClient::new(&endpoint2, "HY-MT1.5-1.8B:Q4_K_M");
         let err = client.complete("hi").expect_err("done=false 应报错");
         assert!(matches!(err, AppError::Translate(_)));
         drop(_handle);
