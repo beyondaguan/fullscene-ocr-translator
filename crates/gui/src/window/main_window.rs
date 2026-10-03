@@ -385,8 +385,15 @@ impl AppState {
     /// 改为锁定已构造好的 [`Translator`] 注册表，复用 `AppState::new` / `update_config`
     /// 里建好的实例，零额外开销。
     pub fn translate(&self, text: &str, src: &str, dst: &str) -> Result<String> {
-        let tr = self.translator.lock().unwrap();
-        tr.translate(text, src, dst)
+        let o = self.translate_detailed(text, src, dst)
+            .map_err(fs_core::AppError::Translate)?;
+        // 「重新翻译」也计入历史，保持历史抽屉与真实使用一致。
+        if let Ok(db) = history_db() {
+            if let Err(e) = db.insert_history(text, &o.text, &o.engine) {
+                crate::log::line(&format!("translate: 历史写入失败（已忽略）: {e}"));
+            }
+        }
+        Ok(o.text)
     }
 
     /// 同 [`Self::translate`]，但回报**实际服务引擎**（降级链可能静默换引擎）。
@@ -494,6 +501,13 @@ impl AppState {
             g.engine_chain_len = outcome.chain_len;
             g.engines_tried = outcome.tried;
             g.updated_at_ms = now_ms();
+        }
+        // 5. 落历史库：每次完整翻译（含「已是中文跳过」）都记录，供历史抽屉回溯。
+        //    写入失败只记日志、绝不影响主流程——历史是辅助能力，不能拖垮翻译。
+        if let Ok(db) = history_db() {
+            if let Err(e) = db.insert_history(&text, &t, &outcome.engine) {
+                crate::log::line(&format!("pipe: 历史写入失败（已忽略）: {e}"));
+            }
         }
         Ok((text, t))
     }
