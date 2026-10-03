@@ -41,6 +41,7 @@ fn main() {
             commands::translate_text,
             commands::screenshot_translate,
             commands::get_history,
+            commands::get_result,
             commands::clear_history,
         ])
         .setup(move |app| {

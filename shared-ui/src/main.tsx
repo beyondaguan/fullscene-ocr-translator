@@ -6,11 +6,34 @@ import { Chat, type ChatMessage } from './layouts/Chat';
 import { History, type HistoryItem } from './layouts/History';
 import { Settings, type SettingsData } from './layouts/Settings';
 import { useTheme } from './hooks/useTheme';
-import { createNativeMsgApi, type EngineInfo } from './hooks/useNativeMsg';
+import { createNativeMsgApi, type EngineInfo, type NativeMsgApi } from './hooks/useNativeMsg';
 import { StatusDot } from './components/StatusBar';
 import { countChars } from './utils/text';
 import './tokens.css';
 import './global.css';
+
+/**
+ * 主动拉取最近一次管线结果并回填两个文本区。
+ *
+ * 事件 `translation-ready` 是单向推送，桥未就绪/窗口重建时会永久丢失
+ * （真机症状：日志显示翻译成功，界面却是 0 字）。本函数走 `get_result`
+ * 命令读 Rust 侧权威状态，是不依赖事件送达的兜底。
+ */
+async function pullResult(
+  api: NativeMsgApi,
+  setSource: (v: string) => void,
+  setTranslation: (v: string) => void,
+): Promise<void> {
+  try {
+    const r = await api.getResult();
+    if (!r) return;
+    // 只在确有内容时覆盖，避免把界面上用户手动编辑的文字清空。
+    if (r.source) setSource(r.source);
+    if (r.translation) setTranslation(r.translation);
+  } catch {
+    // 桥未就绪时静默失败：这是兜底路径，主路径仍是事件。
+  }
+}
 
 function getCurrentLabel(): string {
   // 选区窗口由 Rust 以 `index.html#selection` 打开：hash 是最可靠的身份标识
@@ -81,23 +104,68 @@ function Root() {
 
   // 主窗体监听 Rust 广播的 `translation-ready`（选区截图 / 全局热键完成时推送），
   // 用最新原文+译文刷新工作区。选区窗口不需要此监听。
+  //
+  // 注意：必须对「桥未就绪」重试而不是静默放弃。__TAURI__ 全局是页面脚本执行后
+  // 才注入的，若首次 effect 跑得早一步，监听将永远注册不上——真机症状是
+  // 「Rust 日志 ok(原文/译文都有) 但界面两个区都是 0 字」，且完全无报错。
   React.useEffect(() => {
     if (label !== 'main') return;
-    const tauri = (window as unknown as { __TAURI__?: any }).__TAURI__;
-    const listen = tauri?.event?.listen;
-    if (typeof listen !== 'function') return;
+    let disposed = false;
     let unlisten: (() => void) | undefined;
-    const p = listen('translation-ready', (e: { payload: { source: string; translation: string } }) => {
-      setSource(e.payload.source);
-      setTranslation(e.payload.translation);
-      api.getHistory(50).then((h) => setHistory(h as HistoryItem[])).catch(() => {});
-    });
-    if (p && typeof p.then === 'function') {
-      p.then((u: () => void) => {
-        unlisten = u;
+    let timer: number | undefined;
+    let tries = 0;
+
+    const attach = () => {
+      if (disposed) return;
+      const tauri = (window as unknown as { __TAURI__?: any }).__TAURI__;
+      const listen = tauri?.event?.listen;
+      if (typeof listen !== 'function') {
+        // 桥还没注入完，退避重试；超过 60 次（约 30s）放弃并留日志。
+        if (++tries <= 60) {
+          timer = window.setTimeout(attach, 500);
+        } else {
+          console.error('[fs] __TAURI__.event.listen 始终不可用，translation-ready 无法接收');
+        }
+        return;
+      }
+      const p = listen('translation-ready', (e: { payload: { source?: string; translation?: string } }) => {
+        setSource(e.payload?.source ?? '');
+        setTranslation(e.payload?.translation ?? '');
+        api.getHistory(50).then((h) => setHistory(h as HistoryItem[])).catch(() => {});
       });
-    }
+      if (p && typeof p.then === 'function') {
+        p.then((u: () => void) => {
+          if (disposed) {
+            u?.();
+            return;
+          }
+          unlisten = u;
+          console.log('[fs] translation-ready listener attached after', tries, 'retry(ies)');
+          // 兜底 #1：监听刚就绪就主动拉一次。若上一次结果是在监听注册前
+          // 产生的（例如程序刚启动时用户就按了热键），这里能把它捞回来。
+          pullResult(api, setSource, setTranslation);
+        }).catch((err: unknown) => {
+          console.error('[fs] listen 注册失败', err);
+        });
+      }
+    };
+
+    attach();
+    // 兜底 #2：主窗口每次重新可见（框选后被 show 回来）都拉一次最新结果。
+    // 事件是单向的、可能丢失；窗口可见性变化是可靠信号，能兜住绝大多数丢事件场景。
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        pullResult(api, setSource, setTranslation);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+
     return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
       if (unlisten) unlisten();
     };
   }, [api, label]);

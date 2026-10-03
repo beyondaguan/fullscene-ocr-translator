@@ -267,13 +267,16 @@ impl AppState {
                                     // 事件载荷必须是 { source, translation } 对象：
                                     // 前端 main.tsx 按这两个字段读，之前这里只发了
                                     // 译文裸字符串，导致原文区与译文区都拿到 undefined。
-                                    let _ = appc3.emit(
-                                        "translation-ready",
-                                        serde_json::json!({
-                                            "source": orig,
-                                            "translation": t,
-                                        }),
-                                    );
+                                    // 必须检查返回值：let _ = 会把投递失败一并吞掉，
+                                    // 表现为「Rust 日志一切正常但前端永远空白」。
+                                    let payload = serde_json::json!({
+                                        "source": orig,
+                                        "translation": t,
+                                    });
+                                    match appc3.emit("translation-ready", payload) {
+                                        Ok(()) => crate::log::line("worker(region): emit translation-ready ok"),
+                                        Err(e) => crate::log::line(&format!("worker(region): emit 失败 {e}")),
+                                    }
                                 }
                                 Err(e) => {
                                     crate::log::line(&format!("worker(region): err {e}"));

@@ -154,6 +154,36 @@ pub fn get_history(state: State<'_, AppState>, limit: usize) -> Result<Vec<Histo
         .collect())
 }
 
+/// 读取最近一次管线结果（原文 + 译文 + 源语言 + 时间戳）。
+///
+/// 存在的理由：`translation-ready` 是**单向事件**，桥未就绪、窗口重建或
+/// 监听注册时序稍有偏差就会永久丢失，症状是「Rust 日志显示翻译成功，
+/// 界面两个区都是 0 字」。本命令让前端能主动拉取权威状态，不依赖事件送达。
+///
+/// 独立于 [`ShotResult`]（后者是 `screenshot_translate` 的返回契约，字段更少），
+/// 避免改动既有前端接口。
+#[derive(serde::Serialize)]
+pub struct PipelineSnapshot {
+    pub source: String,
+    pub translation: String,
+    pub source_lang: String,
+    pub updated_at_ms: u64,
+}
+
+#[tauri::command]
+pub fn get_result(state: State<'_, AppState>) -> Result<PipelineSnapshot, String> {
+    let g = state
+        .gui_result
+        .lock()
+        .map_err(|_| "结果锁已损坏".to_string())?;
+    Ok(PipelineSnapshot {
+        source: g.original.clone(),
+        translation: g.translation.clone(),
+        source_lang: g.source_lang.clone(),
+        updated_at_ms: g.updated_at_ms,
+    })
+}
+
 #[tauri::command]
 pub fn clear_history() -> Result<(), String> {
     let db = crate::window::main_window::history_db().map_err(|e| e.to_string())?;

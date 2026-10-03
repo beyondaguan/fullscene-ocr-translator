@@ -22,6 +22,14 @@ export interface EngineInfo {
   available: boolean;
 }
 
+/** 最近一次管线结果的权威快照（Rust 侧 `get_result` 命令返回）。 */
+export interface PipelineSnapshot {
+  source: string;
+  translation: string;
+  source_lang: string;
+  updated_at_ms: number;
+}
+
 export interface NativeMsgApi {
   getConfig: () => Promise<unknown>;
   saveConfig: (config: unknown) => Promise<void>;
@@ -34,6 +42,8 @@ export interface NativeMsgApi {
   translateText: (text: string, src: string, dst: string) => Promise<string>;
   screenshotTranslate: (src?: string, dst?: string) => Promise<ShotResult>;
   getHistory: (limit: number) => Promise<unknown[]>;
+  /** 拉取最近一次管线结果：事件丢失时的权威兜底来源 */
+  getResult: () => Promise<PipelineSnapshot>;
   clearHistory: () => Promise<void>;
 }
 
@@ -74,6 +84,7 @@ export function createNativeMsgApi(): NativeMsgApi {
     screenshotTranslate: (src, dst) =>
       invoke('screenshot_translate', { src: src ?? null, dst: dst ?? null }) as Promise<ShotResult>,
     getHistory: (limit) => invoke('get_history', { limit }) as Promise<unknown[]>,
+    getResult: () => invoke('get_result') as Promise<PipelineSnapshot>,
     clearHistory: () => invoke('clear_history').then(() => undefined),
   };
 }
