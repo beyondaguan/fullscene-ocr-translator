@@ -50,6 +50,10 @@ pub struct TranslateConfig {
     /// SiliconFlow 模型名
     #[serde(default)]
     pub siliconflow_model: Option<String>,
+    /// SiliconFlow 对话（AI 助手）用的通用模型；与翻译模型 `siliconflow_model` 区分，
+    /// 避免把翻译专用模型（Hunyuan-MT-7B）误用于对话。
+    #[serde(default)]
+    pub siliconflow_chat_model: Option<String>,
     /// OpenAI API Key
     #[serde(default)]
     pub openai_key: Option<String>,
@@ -81,6 +85,7 @@ impl Default for TranslateConfig {
             siliconflow_key: None,
             siliconflow_base_url: None,
             siliconflow_model: None,
+            siliconflow_chat_model: None,
             openai_key: None,
             openai_base_url: None,
             openai_model: None,

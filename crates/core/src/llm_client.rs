@@ -4,6 +4,7 @@
 //! 服务未启动 / 超时 / 非 2xx 均返回 [`AppError::Translate`]。
 
 use crate::error::{AppError, Result};
+use crate::translate::ChatMessage;
 use std::time::Duration;
 
 /// Ollama `/api/generate` 响应体（只取所需字段）
@@ -64,6 +65,62 @@ impl LlmClient {
         }
 
         Ok(parsed.response)
+    }
+
+    /// 发送多轮对话请求并返回模型输出文本。
+    ///
+    /// 调用 Ollama 的 OpenAI 兼容端点 `{endpoint}/v1/chat/completions`，
+    /// body 为 `{"model":self.model,"messages":[...],"stream":false}`，
+    /// 解析 `choices[0].message.content`（与 openai_compat.rs 的 `chat_completion` 同协议）。
+    ///
+    /// 对话走通用模型（如 qwen2.5），与 [`complete`] 的 `/api/generate` 翻译补全接口区分。
+    /// 服务未启动 / 超时 / 非 2xx 均返回 [`AppError::Translate`]。超时 120s。
+    pub fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
+        let url = format!(
+            "{}/v1/chat/completions",
+            self.endpoint.trim_end_matches('/')
+        );
+        let msgs: Vec<serde_json::Value> = messages
+            .iter()
+            .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
+            .collect();
+        let body = serde_json::json!({
+            "model": self.model,
+            "messages": msgs,
+            "stream": false,
+        });
+
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(120))
+            .build();
+
+        let resp = agent
+            .post(&url)
+            .send_json(body)
+            .map_err(|e| AppError::Translate(format!("请求 Ollama 对话接口失败: {e}")))?;
+
+        if resp.status() != 200 {
+            return Err(AppError::Translate(format!(
+                "Ollama 对话接口返回非 200 状态码: {}",
+                resp.status()
+            )));
+        }
+
+        let parsed: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| AppError::Translate(format!("解析 Ollama 对话响应失败: {e}")))?;
+
+        let content = parsed
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AppError::Translate("Ollama 对话响应缺少 choices[0].message.content".into())
+            })?;
+
+        Ok(content.trim().to_string())
     }
 }
 

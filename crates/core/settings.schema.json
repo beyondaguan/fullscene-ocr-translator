@@ -50,6 +50,7 @@
         "siliconflow_key": { "type": ["string", "null"] },
         "siliconflow_base_url": { "type": ["string", "null"] },
         "siliconflow_model": { "type": ["string", "null"] },
+        "siliconflow_chat_model": { "type": ["string", "null"], "description": "SiliconFlow 对话（AI 助手）通用模型；与翻译模型区分，默认 Qwen/Qwen2.5-7B-Instruct" },
         "openai_key": { "type": ["string", "null"] },
         "openai_base_url": { "type": ["string", "null"] },
         "openai_model": { "type": ["string", "null"] },

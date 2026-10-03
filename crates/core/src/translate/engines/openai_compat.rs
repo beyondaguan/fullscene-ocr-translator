@@ -104,7 +104,10 @@ fn chat_completion(
 pub struct SiliconFlowEngine {
     base_url: String,
     api_key: Option<String>,
+    /// 翻译模型（默认免费档 Hunyuan-MT-7B，翻译专用）。
     model: String,
+    /// 对话（AI 助手）模型：通用模型，与翻译模型区分，避免把翻译专用模型误用于对话。
+    chat_model: String,
 }
 
 impl SiliconFlowEngine {
@@ -122,6 +125,11 @@ impl SiliconFlowEngine {
             model: t
                 .and_then(|x| x.siliconflow_model.clone())
                 .unwrap_or_else(|| "tencent/Hunyuan-MT-7B".into()),
+            // 对话用通用模型（默认 SiliconFlow 免费通用模型 Qwen2.5-7B-Instruct），
+            // 不复用上面的翻译专用模型。
+            chat_model: t
+                .and_then(|x| x.siliconflow_chat_model.clone())
+                .unwrap_or_else(|| "Qwen/Qwen2.5-7B-Instruct".into()),
         }
     }
 
@@ -162,7 +170,8 @@ impl TranslateBase for SiliconFlowEngine {
             .api_key
             .clone()
             .ok_or_else(|| AppError::Translate("SiliconFlow 未配置密钥".into()))?;
-        chat_completion(&self.base_url, &key, &self.model, messages)
+        // 对话必须用通用模型（chat_model），不复用翻译专用模型 self.model。
+        chat_completion(&self.base_url, &key, &self.chat_model, messages)
     }
 }
 

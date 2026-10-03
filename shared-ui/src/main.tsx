@@ -126,6 +126,13 @@ function Root() {
   const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([]);
   const [chatStreaming, setChatStreaming] = React.useState(false);
 
+  // 轻量 toast：引擎切换等即时反馈（不引入新依赖/新组件文件）
+  const [toast, setToast] = React.useState<string | null>(null);
+  const showToast = React.useCallback((msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 1600);
+  }, []);
+
   // 初始化：拉状态、配置、引擎列表与历史（骨架：忽略失败，便于浏览器预览）
   React.useEffect(() => {
     if (label !== 'main') return;
@@ -182,8 +189,16 @@ function Root() {
         pullResult(api, setSource, setTranslation, setLastRun);
       });
       // `cycle_engine` 全局热键（Ctrl+Alt+E）切换首选引擎后 Rust 广播此事件。
-      // 收到就重拉配置 + 结果，让状态栏与设置页立即反映新的降级链顺序。
-      const c = listen('engine-cycled', () => {
+      // 收到就弹出 toast + 重拉配置 + 结果，让状态栏与设置页立即反映新的降级链顺序。
+      const c = listen('engine-cycled', (e: { payload?: string }) => {
+        const newPrimary = e?.payload ?? '';
+        if (newPrimary) {
+          const label =
+            engines.find((x) => x.id === newPrimary)?.label ??
+            ENGINES.find((x) => x.value === newPrimary)?.label ??
+            newPrimary;
+          showToast(`已切换至 ${label}`);
+        }
         api.getStatus()
           .then((st) => setConfig((st.config ?? {}) as SettingsData))
           .catch(() => {});
@@ -376,13 +391,24 @@ function Root() {
 
   const sendChat = React.useCallback(
     async (text: string) => {
-      const next: ChatMessage[] = [...chatMessages, { role: 'user', content: text }];
-      setChatMessages(next);
+      // 把当前译文（及可选原文）作为 system 上下文注入对话引擎，让助手优先依据面板文本回答。
+      // system 上下文**不进入可见历史**（避免重复累积、也避免作为假「助手」气泡渲染），
+      // 每次发送时重新注入即可。
+      const ctx: ChatMessage[] = [];
+      if (translation && translation.trim()) {
+        let sys = `你正在协助用户处理 OCR 识别后的文本。当前面板里显示的译文如下：\n"""\n${translation}\n"""`;
+        if (source && source.trim()) sys += `\n对应的 OCR 原文如下：\n"""\n${source}\n"""`;
+        sys += `\n回答用户关于这些文本的问题时，优先依据上面给出的译文/原文。`;
+        ctx.push({ role: 'system', content: sys });
+      }
+      // 可见历史只保留 user/assistant 轮次
+      const visible: ChatMessage[] = [...chatMessages, { role: 'user', content: text }];
+      setChatMessages(visible);
       setChatStreaming(true);
       try {
-        // 把完整对话历史交给后端，由可用对话引擎（SiliconFlow / OpenAI）生成回复，
-        // 而非「把输入再翻译一遍」。
-        const reply = await api.chat(next);
+        // 实际发给后端：system 上下文 + 可见历史 + 本次用户输入
+        const payload: ChatMessage[] = [...ctx, ...visible];
+        const reply = await api.chat(payload);
         setChatMessages((m) => [...m, { role: 'assistant', content: reply }]);
       } catch (e) {
         setChatMessages((m) => [...m, { role: 'assistant', content: `错误: ${String(e)}` }]);
@@ -390,7 +416,7 @@ function Root() {
         setChatStreaming(false);
       }
     },
-    [api, chatMessages],
+    [api, chatMessages, translation, source],
   );
 
   const saveConfig = React.useCallback(
@@ -515,25 +541,32 @@ function Root() {
     .map((id: string) => engines.find((e) => e.id === id)?.label ?? id)
     .join(' → ') || '（未配置）';
 
-  // 状态栏引擎显示：**实际服务的那一个**，而不是配置链首项。
-  // 降级链会在首选缺密钥/超时时静默换引擎，只显示名义值会误导用户
-  // （以为在用 SiliconFlow，实际跑的是 MyMemory）。
+  // 状态栏引擎主指标：显示**当前首选引擎**（配置降级链首项），而不是上次实际服务的引擎——
+  // 否则用户按 Ctrl+Alt+E 切了首选也看不出来（lastRun 是上次实际服务的，被降级链换走时与首选不同）。
   const actualEngineId = lastRun?.engine ?? '';
   const actualEngineLabel = actualEngineId
     ? (engines.find((e) => e.id === actualEngineId)?.label ??
        ENGINES.find((e) => e.value === actualEngineId)?.label ??
        actualEngineId)
     : '';
-  const engineCell = actualEngineId && actualEngineId !== 'none' ? (
+  const preferredEngineId = config.translate?.fallback_order?.[0] ?? '';
+  const preferredEngineLabel = preferredEngineId
+    ? (engines.find((e) => e.id === preferredEngineId)?.label ??
+       ENGINES.find((e) => e.value === preferredEngineId)?.label ??
+       preferredEngineId)
+    : '';
+  const engineCell = preferredEngineId ? (
     <span key="engine" title={`降级链：${fallbackChainLabel}`}>
-      引擎 · {actualEngineLabel}
-      {lastRun && lastRun.engine_chain_len > 0
+      引擎 · {preferredEngineLabel}
+      {lastRun && lastRun.engine === preferredEngineId && lastRun.engine_chain_len > 0
         ? ` (第 ${lastRun.engine_position}/${lastRun.engine_chain_len} 环)`
         : ''}
-      {lastRun && lastRun.engines_tried > 0 ? ` · 降级 ${lastRun.engines_tried} 次` : ''}
+      {lastRun && lastRun.engine !== 'none' && lastRun.engine !== preferredEngineId && lastRun.engine_chain_len > 0
+        ? ` · 上次:${actualEngineLabel}(第${lastRun.engine_position}/${lastRun.engine_chain_len}环)`
+        : ''}
     </span>
   ) : (
-    // 尚无翻译结果：显示配置链首选（明确标注「首选」，避免误认为已实际使用）
+    // 尚未配置降级链：显示当前 engine 状态（明确标注「首选，未使用」）
     <span key="engine" title={`降级链：${fallbackChainLabel}`}>
       引擎 · {engineLabel}（首选，未使用）
     </span>
@@ -598,42 +631,63 @@ function Root() {
   // Rust 侧 open_selection / selection_done / close_selection 命令同步下线。
 
   return (
-    <AppShell
-      mode={mode}
-      activeDrawer={activeDrawer}
-      onAction={onAction}
-      railDisabled={[]}
-      statusLeft={statusLeft}
-      statusRight={statusRight}
-      drawers={drawers}
-    >
-      <Workspace
-        source={source}
-        translation={translation}
-        onChangeSource={setSource}
-        onChangeTranslation={setTranslation}
-        loading={loading}
-        error={error}
-        srcLang={srcLang}
-        dstLang={dstLang}
-        engine={engine}
-        onLangChange={(which, value) => (which === 'src' ? setSrcLang(value) : setDstLang(value))}
-        onSwapLang={doSwap}
-        onEngineChange={setEngine}
-        onRetranslate={doRetranslate}
-        onCopy={doCopy}
-        onSpeak={doSpeak}
-        speakSupported={ttsSupported}
-      />
-      {/* 本地图片 OCR 用：隐藏的文件选择器，点击「图片」按钮时触发 */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={onImageFile}
-      />
-    </AppShell>
+    <>
+      <AppShell
+        mode={mode}
+        activeDrawer={activeDrawer}
+        onAction={onAction}
+        railDisabled={[]}
+        statusLeft={statusLeft}
+        statusRight={statusRight}
+        drawers={drawers}
+      >
+        <Workspace
+          source={source}
+          translation={translation}
+          onChangeSource={setSource}
+          onChangeTranslation={setTranslation}
+          loading={loading}
+          error={error}
+          srcLang={srcLang}
+          dstLang={dstLang}
+          engine={engine}
+          onLangChange={(which, value) => (which === 'src' ? setSrcLang(value) : setDstLang(value))}
+          onSwapLang={doSwap}
+          onEngineChange={setEngine}
+          onRetranslate={doRetranslate}
+          onCopy={doCopy}
+          onSpeak={doSpeak}
+          speakSupported={ttsSupported}
+        />
+        {/* 本地图片 OCR 用：隐藏的文件选择器，点击「图片」按钮时触发 */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={onImageFile}
+        />
+      </AppShell>
+      {/* 引擎切换等即时反馈 toast（极简，无新依赖） */}
+      {toast ? (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#1677ff',
+            color: '#fff',
+            padding: '8px 16px',
+            borderRadius: 8,
+            zIndex: 9999,
+            fontSize: 13,
+          }}
+        >
+          {toast}
+        </div>
+      ) : null}
+    </>
   );
 }
 
