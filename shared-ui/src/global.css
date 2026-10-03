@@ -15,7 +15,9 @@ body,
 }
 
 body {
-  font-family: var(--font-cn);
+  /* --font-family 会被设置页的字体选择覆盖（写到 :root.style），
+     未选择时 tokens.css 里已给出等效默认值。 */
+  font-family: var(--font-family);
   font-size: var(--font-size-md);
   line-height: 1.6;
   color: var(--color-text-primary);

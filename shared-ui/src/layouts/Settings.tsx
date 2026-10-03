@@ -5,6 +5,14 @@ import { Select, type SelectOption } from '../components/Select';
 import { Switch } from '../components/Switch';
 import { Tabs } from '../components/Tabs';
 import type { EngineInfo } from '../hooks/useNativeMsg';
+import {
+  ACCENTS,
+  DEFAULT_ACCENT,
+  DEFAULT_FONT,
+  DEFAULT_FONT_SCALE,
+  FONT_FAMILIES,
+  FONT_SCALES,
+} from '../theme';
 
 export interface SettingsData {
   ocr_model_dir?: string | null;
@@ -13,6 +21,12 @@ export interface SettingsData {
   /** 全局动作热键表：动作 id → 组合键（与 Rust `Config.hotkeys` 对齐）。清空某动作 = 恢复代码内置默认键 */
   hotkeys?: Record<string, string> | null;
   ui_theme?: string | null;
+  /** 界面字体族 id（字体栈见 `theme.ts` FONT_FAMILIES） */
+  ui_font?: string | null;
+  /** 界面字号缩放百分比（80-160） */
+  ui_font_scale?: number | null;
+  /** 主题色板 id（色值见 `theme.ts` ACCENTS） */
+  ui_accent?: string | null;
   /** 翻译轴配置（降级链 + 各云引擎密钥），与 Rust `TranslateConfig` 对齐 */
   translate?: TranslateSettings;
 }
@@ -38,6 +52,16 @@ export interface SettingsProps {
   /** 已注册引擎及可用状态（来自 Rust `list_engines`） */
   engines?: EngineInfo[];
   onThemeChange?: (theme: 'light' | 'dark') => void;
+  /** 强调色变更（即时生效，宿主同步写回 Rust 配置） */
+  onAccentChange?: (id: string) => void;
+  /** 字体族变更（即时生效，宿主同步写回 Rust 配置） */
+  onFontChange?: (id: string) => void;
+  /** 界面字号缩放变更（80-160） */
+  onFontScaleChange?: (scale: number) => void;
+  /** 宿主持有的当前值，用于渲染选中态 */
+  accentId?: string;
+  fontId?: string;
+  fontScale?: number;
   onSave?: (cfg: SettingsData) => Promise<void> | void;
   onReload?: () => void;
   onTestConnection?: (endpoint: string, model: string) => Promise<string>;
@@ -90,6 +114,12 @@ export function Settings({
   theme = 'light',
   engines,
   onThemeChange,
+  onAccentChange,
+  onFontChange,
+  onFontScaleChange,
+  accentId,
+  fontId,
+  fontScale,
   onSave,
   onReload,
   onTestConnection,
@@ -123,14 +153,27 @@ export function Settings({
         }}
       >
         {cat === 'general' && (
-          <Switch
-            checked={theme === 'light'}
-            onChange={(v) => {
-              const next = v ? 'light' : 'dark';
+          <AppearancePane
+            theme={theme}
+            onThemeChange={(next) => {
               onThemeChange?.(next);
               set({ ui_theme: next });
             }}
-            label="浅色主题（关闭 = 深色）"
+            accentId={accentId ?? cfg.ui_accent ?? DEFAULT_ACCENT}
+            onAccentChange={(id) => {
+              onAccentChange?.(id);
+              set({ ui_accent: id });
+            }}
+            fontId={fontId ?? cfg.ui_font ?? DEFAULT_FONT}
+            onFontChange={(id) => {
+              onFontChange?.(id);
+              set({ ui_font: id });
+            }}
+            fontScale={fontScale ?? cfg.ui_font_scale ?? DEFAULT_FONT_SCALE}
+            onFontScaleChange={(n) => {
+              onFontScaleChange?.(n);
+              set({ ui_font_scale: n });
+            }}
           />
         )}
 
@@ -421,6 +464,109 @@ const badge = (ok: boolean): CSSProperties => ({
 });
 
 /** 翻译页：引擎状态 + 降级链排序 + 各引擎密钥。 */
+function AppearancePane(props: {
+  theme: 'light' | 'dark';
+  onThemeChange: (t: 'light' | 'dark') => void;
+  accentId: string;
+  onAccentChange: (id: string) => void;
+  fontId: string;
+  onFontChange: (id: string) => void;
+  fontScale: number;
+  onFontScaleChange: (n: number) => void;
+}) {
+  const { theme, onThemeChange, accentId, onAccentChange, fontId, onFontChange, fontScale, onFontScaleChange } = props;
+  return (
+    <>
+      <Switch
+        checked={theme === 'light'}
+        onChange={(v) => onThemeChange(v ? 'light' : 'dark')}
+        label="浅色主题（关闭 = 深色）"
+      />
+
+      <div style={sectionTitle}>主题色</div>
+      <div style={sectionHint}>用于按钮、选中态与强调文字。切换即时生效。</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-sm)' }}>
+        {ACCENTS.map((a) => {
+          const active = a.id === accentId;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => onAccentChange(a.id)}
+              title={a.label}
+              aria-label={a.label}
+              aria-pressed={active}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--spacing-xs)',
+                padding: '6px 10px',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                // 选中态用 0.5px 发丝线 + 强调色描边，不用厚边框贴纸（见设计规范）
+                border: `0.5px solid ${active ? a.base : 'var(--color-hairline-strong)'}`,
+                background: active ? a.soft : 'transparent',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--font-size-sm)',
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 3,
+                  background: a.base,
+                  flex: '0 0 auto',
+                }}
+              />
+              {a.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={sectionTitle}>界面字体</div>
+      <div style={sectionHint}>全部使用 Windows 自带字体，无需额外安装。切换即时生效。</div>
+      <Select
+        value={fontId}
+        onChange={(v) => onFontChange(v)}
+        ariaLabel="界面字体"
+        options={FONT_FAMILIES.map((f) => ({ value: f.id, label: f.label }))}
+      />
+
+      <div style={sectionTitle}>界面字号</div>
+      <div style={sectionHint}>整体等比缩放，含状态栏与两栏文本区。</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-sm)' }}>
+        {FONT_SCALES.map((n) => {
+          const active = n === fontScale;
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onFontScaleChange(n)}
+              aria-pressed={active}
+              style={{
+                minWidth: 56,
+                padding: '6px 8px',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                border: `0.5px solid ${active ? 'var(--color-primary)' : 'var(--color-hairline-strong)'}`,
+                background: active ? 'var(--color-accent-soft)' : 'transparent',
+                color: 'var(--color-text-primary)',
+                fontSize: 'var(--font-size-sm)',
+                fontFamily: 'var(--font-family)',
+              }}
+            >
+              {n}%
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 function TranslatePane({
   engines,
   value,

@@ -52,7 +52,6 @@ function getCurrentLabel(): string {
 }
 
 function Root() {
-  const { theme, setTheme } = useTheme();
   // 必须 memo：createNativeMsgApi() 每次调用都返回**新对象**，若不固定引用，
   // 下面所有以 `api` 为依赖的 useEffect / useCallback 都会在每次渲染后失效重跑，
   // 表现为「初始化请求风暴 + 按钮点击后界面卡顿无响应」。
@@ -77,6 +76,45 @@ function Root() {
   const [ocrReady, setOcrReady] = React.useState(false);
   const [config, setConfig] = React.useState<SettingsData>({});
   const [configPath, setConfigPath] = React.useState('');
+
+  // config 的最新值镜像：保存配置时若直接闭包捕获 config，会读到调用时刻的
+  // 旧快照（用户可能刚在设置页改过）。ref 保证永远拿到最新值。
+  const configRef = React.useRef<SettingsData>({});
+  configRef.current = config;
+
+  // 外观（明暗 / 强调色 / 字体 / 字号缩放）。必须在 config state 之后声明：
+  // useTheme 以 config.json 的值为初值，顺序反了读不到。
+  // onChange 把用户改动写回 Rust 持久化（localStorage 已先写一份，保证即时生效）。
+  const persistAppearance = React.useCallback(
+    (next: { accent: string; font: string; fontScale: number }) => {
+      setConfig((c) => ({
+        ...c,
+        ui_accent: next.accent,
+        ui_font: next.font,
+        ui_font_scale: next.fontScale,
+      }));
+      api
+        .saveConfig({ ...configRef.current, ui_accent: next.accent, ui_font: next.font, ui_font_scale: next.fontScale })
+        .catch((e: unknown) => console.error('[fs] 保存外观配置失败', e));
+    },
+    [api],
+  );
+
+  const {
+    theme,
+    setTheme,
+    accentId,
+    setAccent,
+    fontId,
+    setFont,
+    fontScale,
+    setFontScale,
+  } = useTheme({
+    initialAccent: config.ui_accent,
+    initialFont: config.ui_font,
+    initialFontScale: config.ui_font_scale ?? undefined,
+    onChange: persistAppearance,
+  });
   const [engines, setEngines] = React.useState<EngineInfo[]>([]);
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
   /** 最近一次管线的引擎信息（状态栏显示「实际是谁翻译的」）。 */
@@ -484,6 +522,12 @@ function Root() {
           theme={theme}
           engines={engines}
           onThemeChange={setTheme}
+          onAccentChange={setAccent}
+          onFontChange={setFont}
+          onFontScaleChange={setFontScale}
+          accentId={accentId}
+          fontId={fontId}
+          fontScale={fontScale}
           onSave={saveConfig}
           onReload={reloadConfig}
           onTestConnection={testConnection}

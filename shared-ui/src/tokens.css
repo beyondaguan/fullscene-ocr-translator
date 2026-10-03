@@ -63,14 +63,20 @@
   --radius-pill: 999px;
 
   /* 字体 */
+  /* --font-family / --font-scale 由 useTheme 写到 :root.style（设置页可调）。
+     未设置时下方给出等效默认值，故脱离 React 预览也有正确观感。 */
+  --font-family: var(--font-cn);
+  --font-scale: 1;
   --font-cn: "PingFang SC", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "SF Mono", Monaco, Consolas, monospace;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-md: 13px;
-  --font-size-base: 14px;
-  --font-size-lg: 16px;
-  --font-size-xl: 20px;
+  /* 各档字号基于 14px 基准 × 档位系数 × --font-scale：
+     缩放只改 --font-scale 一处，整体等比变化，不必逐档调整。 */
+  --font-size-xs: calc(14px * 0.786 * var(--font-scale));
+  --font-size-sm: calc(14px * 0.857 * var(--font-scale));
+  --font-size-md: calc(14px * 0.929 * var(--font-scale));
+  --font-size-base: calc(14px * var(--font-scale));
+  --font-size-lg: calc(14px * 1.143 * var(--font-scale));
+  --font-size-xl: calc(14px * 1.429 * var(--font-scale));
   --line-height-text: 1.75;
 
   /* 阴影 */

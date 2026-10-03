@@ -108,6 +108,21 @@ pub struct Config {
     pub hotkeys: HashMap<String, String>,
     /// 原生控制台 UI 主题（"dark" | "light"）
     pub ui_theme: Option<String>,
+    /// 界面字体族 id（见前端 `FONT_FAMILIES`）。`None` = 用 tokens.css 默认。
+    ///
+    /// 存 id 而非字体栈：字体栈是实现细节且需 CSS 转义，放前端常量表里维护，
+    /// 配置只负责「选了第几个」，后端不感知具体字体名。
+    #[serde(default)]
+    pub ui_font: Option<String>,
+    /// 界面字号缩放百分比（80–160）。`None` = 100%。
+    ///
+    /// 用**缩放**而非逐档字号：tokens.css 里字号已成体系（xs/sm/md/base/lg/xl），
+    /// 改一处 `--font-size-*` 的缩放基准即可整体等比变化，无需逐个改 6 个变量。
+    #[serde(default)]
+    pub ui_font_scale: Option<u16>,
+    /// 主题色板 id（见前端 `ACCENTS`）。`None` = 用 tokens.css 默认蓝。
+    #[serde(default)]
+    pub ui_accent: Option<String>,
     /// Translate 轴配置（M7）。缺省时回落 [`TranslateConfig::default`]。
     #[serde(default)]
     pub translate: Option<TranslateConfig>,
@@ -121,6 +136,9 @@ impl Default for Config {
             llm_model: Some("qwen2.5".to_string()),
             hotkeys: HashMap::new(),
             ui_theme: Some("dark".to_string()),
+            ui_font: None,
+            ui_font_scale: None,
+            ui_accent: None,
             translate: None,
         }
     }
@@ -260,6 +278,9 @@ mod tests {
             "llm_model",
             "hotkeys",
             "ui_theme",
+            "ui_font",
+            "ui_font_scale",
+            "ui_accent",
             "translate",
         ];
         let mut props_sorted = props;

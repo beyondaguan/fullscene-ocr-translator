@@ -27,6 +27,20 @@
       "enum": ["dark", "light", null],
       "description": "原生 UI 主题"
     },
+    "ui_font": {
+      "type": ["string", "null"],
+      "description": "界面字体族 id（字体栈定义在前端 FONT_FAMILIES 常量表）。留空用 tokens.css 默认"
+    },
+    "ui_font_scale": {
+      "type": ["integer", "null"],
+      "minimum": 80,
+      "maximum": 160,
+      "description": "界面字号缩放百分比（80-160），等比作用于 tokens.css 的 --font-size-* 基准。留空 = 100"
+    },
+    "ui_accent": {
+      "type": ["string", "null"],
+      "description": "主题色板 id（色值定义在前端 ACCENTS 常量表）。留空用 tokens.css 默认蓝 #1677ff"
+    },
     "translate": {
       "type": ["object", "null"],
       "description": "Translate 轴配置（M7）：云引擎密钥 + 降级链 fallback_order。缺省回落内置默认降级链 [mymemory, google, local-llm]",
