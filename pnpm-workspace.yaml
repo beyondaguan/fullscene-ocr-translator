@@ -1,0 +1,10 @@
+packages:
+  - 'shared-ui'
+  - 'extension'
+  - 'crates/gui' # 软件主体 GUI（tauri CLI 脚本）
+
+# Windows D 盘无 symlink 权限，使用 hoisted 布局（平铺 node_modules，不建符号链接）
+allowBuilds:
+  esbuild: true
+
+nodeLinker: hoisted

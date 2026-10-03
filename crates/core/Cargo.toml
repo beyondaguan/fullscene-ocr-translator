@@ -1,0 +1,22 @@
+[package]
+name = "fs-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "全场景 OCR 翻译系统 — 核心业务：OCR 调度 / 翻译路由 / 历史库 / 配置 / 系统能力"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+image = { workspace = true }
+oar-ocr = { workspace = true }
+ureq = { workspace = true }
+dirs = { workspace = true }
+rusqlite = { workspace = true }
+
+# 平台能力（截图 GDI / 全局热键 / 托盘）仅 Windows 目标编译
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }

@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FullSceneOCR Config",
+  "description": "软件主体配置单一真源；属性集必须与 fs_core::config::Config 字段完全一致（由 settings_schema_matches_config_fields 测试守护）",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ocr_model_dir": {
+      "type": ["string", "null"],
+      "description": "PP-OCRv6 模型目录；留空使用内置默认目录"
+    },
+    "llm_endpoint": {
+      "type": ["string", "null"],
+      "description": "本地大模型端点（Ollama 默认 http://127.0.0.1:11434）"
+    },
+    "llm_model": {
+      "type": ["string", "null"],
+      "description": "本地大模型名（默认 qwen2.5）"
+    },
+    "hotkeys": {
+      "type": "object",
+      "description": "全局动作热键表：动作 id（region_translate / fullscreen_translate）→ 组合键（如 \"Alt+Q\"）。缺省回落代码内置默认（见 DEFAULT_HOTKEYS）。",
+      "additionalProperties": { "type": ["string", "null"] }
+    },
+    "ui_theme": {
+      "type": ["string", "null"],
+      "enum": ["dark", "light", null],
+      "description": "原生 UI 主题"
+    },
+    "translate": {
+      "type": ["object", "null"],
+      "description": "Translate 轴配置（M7）：云引擎密钥 + 降级链 fallback_order。缺省回落内置默认降级链 [mymemory, google, local-llm]",
+      "additionalProperties": false,
+      "properties": {
+        "fallback_order": { "type": "array", "items": { "type": "string" } },
+        "siliconflow_key": { "type": ["string", "null"] },
+        "siliconflow_base_url": { "type": ["string", "null"] },
+        "siliconflow_model": { "type": ["string", "null"] },
+        "openai_key": { "type": ["string", "null"] },
+        "openai_base_url": { "type": ["string", "null"] },
+        "openai_model": { "type": ["string", "null"] },
+        "edge_key": { "type": ["string", "null"] },
+        "edge_region": { "type": ["string", "null"] },
+        "bing_key": { "type": ["string", "null"] },
+        "bing_region": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

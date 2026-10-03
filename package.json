@@ -1,0 +1,22 @@
+{
+  "name": "fullscene-ocr-translator",
+  "version": "1.8.0",
+  "private": true,
+  "packageManager": "pnpm@12.5.1",
+  "scripts": {
+    "dev": "run-p dev:*",
+    "dev:ui": "pnpm --filter shared-ui dev",
+    "dev:host": "pnpm --filter gui tauri dev",
+    "build": "pnpm --filter shared-ui build && pnpm --filter extension build && pnpm --filter gui tauri build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm --filter shared-ui typecheck && pnpm --filter extension typecheck",
+    "lint": "eslint . && cargo clippy --workspace -- -D warnings",
+    "format": "prettier --write . && cargo fmt --all"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.5.0",
+    "prettier": "^3.3.0",
+    "eslint": "^9.0.0"
+  }
+}

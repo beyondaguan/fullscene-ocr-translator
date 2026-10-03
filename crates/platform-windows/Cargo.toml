@@ -1,0 +1,14 @@
+[package]
+name = "fs-platform-windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "全场景 OCR 翻译系统 — Windows 平台能力实现（GDI 截图 / RegisterHotKey 热键 / 托盘）[ADR-001 脚手架]"
+
+[dependencies]
+fs-platform = { path = "../platform" }
+
+# Win32 系统 API 仅在 Windows 目标编译
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }

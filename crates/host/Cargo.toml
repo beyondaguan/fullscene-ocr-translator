@@ -1,0 +1,15 @@
+[package]
+name = "fs-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "全场景 OCR 翻译系统 — Native Messaging 宿主（协议编解码 + 请求分发）"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+fs-core = { path = "../core" }
+
+# 宿主名 com.fullscene.ocr_translator（见 PRODUCTION.md §4）

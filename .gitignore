@@ -1,0 +1,46 @@
+# ---- Rust / Cargo ----
+/target/
+**/*.rs.bk
+*.pdb
+
+# ---- Node / pnpm ----
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# ---- 构建产物（前端）----
+shared-ui/dist/
+extension/dist/
+extension/.vite/
+
+# ---- 模型权重 ----
+# 策略：根目录 models/ 入库（PP-OCRv6 onnx 共 31MB，一次性）。
+# crates/core/models/ 是同一批文件的硬链接副本，重复占 31MB，故排除。
+# 如需改用 git-lfs：git lfs track "*.onnx"
+models/
+!models/ppocrv6/*.onnx
+!models/ppocrv6/*.txt
+crates/core/models/
+
+# ---- 运行日志 / 临时产物 ----
+*.log
+fs-gui-out.log
+fs-gui-err*.log
+tests-data/**/*.png.tmp
+
+# ---- 本地私有配置（含 API Key，绝不入库）----
+.env
+.env.local
+config.local.json
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- WorkBuddy 本地数据 ----
+# e2e-edge-profile 是浏览器自动化跑出来的 profile（319 个缓存文件），必须排除
+.workbuddy/e2e-edge-profile/
+/.workbuddy/memory/

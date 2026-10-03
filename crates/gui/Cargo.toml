@@ -1,0 +1,31 @@
+[package]
+name = "fs-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "全场景 OCR 翻译系统 — 软件主体主窗体（Tauri 2：tao 窗口 + WebView2 渲染四页面）"
+
+# 生产构建必须启用此特性：让 Tauri 内嵌 frontendDist 静态资源，
+# 否则运行时回退 devUrl（http://localhost:1420）导致「localhost 拒绝连接」。
+[features]
+# default 启用 custom-protocol：让 debug 构建（cargo build）也加载内置 frontendDist，
+# 而不是回退 devUrl（http://localhost:1420）→ 双击 target/debug/fs-gui.exe
+# 不再报 ERR_CONNECTION_REFUSED（详见 docs/debug_exe_localhost_refused.md）。
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+fs-core = { path = "../core" }
+dirs = { workspace = true }
+
+# 全局热键 / 托盘 / 截图在软件主体侧注册（core 已提供能力）
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }

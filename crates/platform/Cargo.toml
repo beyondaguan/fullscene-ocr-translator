@@ -1,0 +1,11 @@
+[package]
+name = "fs-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "全场景 OCR 翻译系统 — 平台能力抽象层（截图/热键/托盘 trait + 平台无关领域类型）[ADR-001 脚手架]"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }

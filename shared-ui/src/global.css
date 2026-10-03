@@ -1,0 +1,171 @@
+/* 全局基础样式（软件主体 + 浏览器扩展 双端共用） */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-cn);
+  font-size: var(--font-size-md);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-container);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+textarea {
+  resize: none;
+}
+
+/* 键盘可达性：只用 focus-visible，不干扰鼠标操作 */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+/* 拖拽分隔条时禁止选中文本 */
+body.fs-dragging {
+  user-select: none;
+  cursor: row-resize;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-hairline-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── 组件交互态（用 CSS 而非 React state，避免 hover 触发重渲染） ── */
+
+.fs-rail-item {
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.fs-rail-item:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+.fs-rail-item[data-active='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-primary);
+}
+.fs-rail-item[data-active='true']:hover:not(:disabled) {
+  background: var(--color-accent-soft-hover);
+}
+.fs-rail-item:disabled {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.fs-chip {
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.fs-chip:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.fs-chip[data-active='true'] {
+  background: var(--color-accent-soft);
+  border-color: transparent;
+  color: var(--color-primary);
+}
+.fs-chip[data-active='true']:hover:not(:disabled) {
+  background: var(--color-accent-soft-hover);
+}
+.fs-chip:disabled {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.fs-icon-btn {
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.fs-icon-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.fs-splitter:hover .fs-splitter-handle,
+.fs-splitter[data-dragging='true'] .fs-splitter-handle {
+  background: var(--color-primary);
+}
+
+.fs-drawer {
+  animation: fs-drawer-in var(--duration-normal) var(--ease-out);
+}
+@keyframes fs-drawer-in {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.fs-scrim {
+  animation: fs-scrim-in var(--duration-fast) var(--ease-out);
+}
+@keyframes fs-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

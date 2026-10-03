@@ -1,0 +1,72 @@
+{
+  "manifest_version": 3,
+  "name": "全场景OCR翻译",
+  "version": "1.9.0",
+  "description": "与软件主体配合使用的浏览器端翻译扩展：全文翻译 / 划词翻译 / 侧栏翻译",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "nativeMessaging",
+    "clipboardWrite",
+    "sidePanel",
+    "contextMenus"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "commands": {
+    "translate-selection": {
+      "suggested_key": {
+        "default": "Alt+T"
+      },
+      "description": "翻译选中文本"
+    },
+    "open-sidebar": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L"
+      },
+      "description": "打开侧栏翻译"
+    }
+  },
+  "action": {
+    "default_popup": "dist/popup/index.html",
+    "default_icon": "dist/icons/icon128.png",
+    "default_title": "全场景OCR翻译"
+  },
+  "options_ui": {
+    "page": "dist/options/index.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "side_panel": {
+    "default_path": "dist/sidebar/index.html"
+  },
+  "icons": {
+    "16": "dist/icons/icon16.png",
+    "48": "dist/icons/icon48.png",
+    "128": "dist/icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ocr@fullscene.app",
+      "strict_min_version": "115.0"
+    }
+  }
+}

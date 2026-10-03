@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://fullscene.local/nm-protocol.schema.json",
+  "title": "FullSceneOCR Native Messaging Wire Contract",
+  "description": "Rust 壳(fs-host) 与 浏览器扩展(nm/client.ts) 之间的 Native Messaging 线上契约单一真源。两端手工同步 types.rs / message.ts，本文件 + tests/schema-contract.test.ts 共同锁死，防止将来漂移。传输层：4 字节小端长度前缀 + UTF-8 JSON（见 crates/host/src/protocol.rs）。",
+  "definitions": {
+    "CaptureTarget": {
+      "oneOf": [
+        { "type": "object", "properties": { "mode": { "const": "Primary" } }, "required": ["mode"], "additionalProperties": false },
+        { "type": "object", "properties": { "mode": { "const": "Region" }, "x": { "type": "integer" }, "y": { "type": "integer" }, "w": { "type": "integer" }, "h": { "type": "integer" } }, "required": ["mode", "x", "y", "w", "h"], "additionalProperties": false },
+        { "type": "object", "properties": { "mode": { "const": "Monitor" }, "index": { "type": "integer", "minimum": 0 } }, "required": ["mode", "index"], "additionalProperties": false },
+        { "type": "object", "properties": { "mode": { "const": "All" } }, "required": ["mode"], "additionalProperties": false },
+        { "type": "object", "properties": { "mode": { "const": "Active" } }, "required": ["mode"], "additionalProperties": false }
+      ]
+    },
+    "OcrLine": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "confidence": { "type": "number" },
+        "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
+      },
+      "required": ["text", "confidence", "bbox"],
+      "additionalProperties": false
+    }
+  },
+  "NmRequest": {
+    "oneOf": [
+      { "type": "object", "properties": { "type": { "const": "Ping" } }, "required": ["type"], "additionalProperties": false },
+      { "type": "object", "properties": { "type": { "const": "Capture" }, "target": { "$ref": "#/definitions/CaptureTarget" } }, "required": ["type", "target"], "additionalProperties": false },
+      { "type": "object", "properties": { "type": { "const": "SelectCapture" } }, "required": ["type"], "additionalProperties": false },
+      { "type": "object", "properties": { "type": { "const": "Ocr" }, "image_id": { "type": "string" } }, "required": ["type", "image_id"], "additionalProperties": false },
+      { "type": "object", "properties": { "type": { "const": "Translate" }, "text": { "type": "string" }, "src": { "type": "string" }, "dst": { "type": "string" } }, "required": ["type", "text", "src", "dst"], "additionalProperties": false }
+    ]
+  },
+  "NmResponse": {
+    "oneOf": [
+      { "type": "object", "properties": { "type": { "const": "Pong" } }, "required": ["type"], "additionalProperties": false },
+      { "type": "object", "properties": { "type": { "const": "Error" }, "message": { "type": "string" } }, "required": ["type", "message"], "additionalProperties": false },
+      { "type": "object", "properties": { "type": { "const": "Captured" }, "width": { "type": "integer" }, "height": { "type": "integer" }, "image_id": { "type": "string" } }, "required": ["type", "width", "height", "image_id"], "additionalProperties": false },
+      { "type": "object", "properties": { "type": { "const": "OcrResult" }, "lines": { "type": "array", "items": { "$ref": "#/definitions/OcrLine" } } }, "required": ["type", "lines"], "additionalProperties": false },
+      { "type": "object", "properties": { "type": { "const": "Translation" }, "text": { "type": "string" } }, "required": ["type", "text"], "additionalProperties": false }
+    ]
+  }
+}
