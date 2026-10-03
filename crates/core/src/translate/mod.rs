@@ -116,14 +116,15 @@ impl Translator {
 
     /// 多轮对话：调用首个「可用且支持对话」的引擎。
     ///
-    /// 尝试顺序固定为 local-llm → siliconflow → openai：
-    /// - **local-llm（Ollama HY-MT1.5-1.8B:Q4_K_M 轻量模型）**：本地离线、免费优先，现支持对话
-    ///   （走 Ollama `/v1/chat/completions`，不再复用翻译用的 `/api/generate`）。
-    /// - **siliconflow / openai**：仅作云端兜底（需配置密钥，用各自的通用对话模型）。
+    /// 尝试顺序固定为 siliconflow → openai：
+    /// - **siliconflow / openai**：云端通用对话模型（SiliconFlow 默认免费通用模型
+    ///   `Qwen/Qwen2.5-7B-Instruct`），对话质量高、无需本地算力。
+    /// - **local-llm（Ollama）不参与对话**：本地默认是翻译专用模型
+    ///   `HY-MT1.5-1.8B:Q4_K_M`（把提问当翻译处理），故对话不尝试它。
     ///
     /// 任一可用引擎调用失败会自动尝试下一个；都不可用则给出明确提示而非静默失败。
     pub fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
-        for id in ["local-llm", "siliconflow", "openai"] {
+        for id in ["siliconflow", "openai"] {
             if let Some(e) = self.registry.get(id) {
                 if e.available() {
                     if let Ok(r) = e.chat(messages) {
@@ -133,7 +134,7 @@ impl Translator {
             }
         }
         Err(AppError::Translate(
-            "没有可用的对话引擎：请在本机启动 Ollama，或在设置中配置 SiliconFlow / OpenAI 密钥".into(),
+            "没有可用的对话引擎：请在设置中配置 SiliconFlow / OpenAI 密钥".into(),
         ))
     }
 }

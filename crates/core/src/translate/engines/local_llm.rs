@@ -45,8 +45,12 @@ impl TranslateBase for LocalLlmEngine {
         llm_translate::translate(&client, text, src, dst)
     }
 
-    /// 多轮对话：走 Ollama 的 OpenAI 兼容端点 `/v1/chat/completions`（默认 HY-MT1.5-1.8B:Q4_K_M），
-    /// 与翻译用的 `/api/generate` 区分。本地模型离线免费，作为 AI 助手首选引擎。
+    /// 多轮对话：走 Ollama 的 OpenAI 兼容端点 `/v1/chat/completions`。
+    ///
+    /// **当前对话不走本地**（`Translator::chat` 只尝试 siliconflow/openai 云端通用对话模型，
+    /// 因为本地默认是翻译专用模型 `HY-MT1.5-1.8B:Q4_K_M`，会把提问当翻译处理）。
+    /// 此实现保留为「可选能力」：将来若想本地对话，把本机 Ollama 换成通用对话模型
+    /// （如 qwen2.5:3b）并让 `Translator::chat` 加回 `local-llm` 即可启用。
     fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
         let client = LlmClient::new(self.endpoint.clone(), self.model.clone());
         client.chat(messages)
