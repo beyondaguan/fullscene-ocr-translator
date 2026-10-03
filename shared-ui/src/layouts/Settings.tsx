@@ -36,6 +36,8 @@ export interface TranslateSettings {
   siliconflow_key?: string | null;
   siliconflow_base_url?: string | null;
   siliconflow_model?: string | null;
+  /** SiliconFlow 对话（AI 助手）通用模型；与翻译模型区分 */
+  siliconflow_chat_model?: string | null;
   openai_key?: string | null;
   openai_base_url?: string | null;
   openai_model?: string | null;
@@ -199,18 +201,10 @@ export function Settings({
         )}
 
         {cat === 'ai' && (
-          <>
-            <Input
-              label="AI 对话默认端点"
-              value={cfg.llm_endpoint ?? ''}
-              onChange={(e) => set({ llm_endpoint: e.target.value || null })}
-            />
-            <Input
-              label="AI 对话默认模型"
-              value={cfg.llm_model ?? ''}
-              onChange={(e) => set({ llm_model: e.target.value || null })}
-            />
-          </>
+          <AiPane
+            value={cfg.translate ?? {}}
+            onChange={(patch) => set({ translate: { ...(cfg.translate ?? {}), ...patch } })}
+          />
         )}
 
         {cat === 'hotkey' && (
@@ -454,6 +448,18 @@ const SILICONFLOW_MODELS: SelectOption[] = [
   { value: 'deepseek-ai/DeepSeek-V3', label: 'DeepSeek-V3（付费 ¥2/¥8 每百万 token）' },
 ];
 
+/**
+ * SiliconFlow 对话（AI 助手）通用模型（2026-10 核实：输入输出均为 ¥0 免费档）。
+ *
+ * 与翻译模型严格区分：翻译用 `siliconflow_model`（默认 Hunyuan-MT-7B 翻译专用），
+ * 对话用本列表的通用模型（默认 Qwen/Qwen2.5-7B-Instruct），避免把提问当翻译处理。
+ */
+const SILICONFLOW_CHAT_MODELS: SelectOption[] = [
+  { value: 'Qwen/Qwen2.5-7B-Instruct', label: 'Qwen2.5-7B-Instruct（免费·通用对话·中文强）' },
+  { value: 'THUDM/GLM-Z1-9B-0414', label: 'GLM-Z1-9B-0414（免费·通用·推理·128K）' },
+  { value: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B', label: 'DeepSeek-R1-0528-Qwen3-8B（免费·通用·推理·128K）' },
+];
+
 const badge = (ok: boolean): CSSProperties => ({
   fontSize: 'var(--font-size-xs)',
   padding: '1px 8px',
@@ -562,6 +568,44 @@ function AppearancePane(props: {
             </button>
           );
         })}
+      </div>
+    </>
+  );
+}
+
+/** AI 对话引擎配置：对话走云端通用模型，与翻译引擎严格区分。 */
+function AiPane({
+  value,
+  onChange,
+}: {
+  value: TranslateSettings;
+  onChange: (patch: Partial<TranslateSettings>) => void;
+}) {
+  return (
+    <>
+      <div style={sectionTitle}>AI 对话引擎（与翻译引擎分离）</div>
+      <div style={sectionHint}>
+        对话走**云端通用模型**（免费、质量好），不走本地翻译引擎——本地默认是翻译专用模型
+        （HY-MT1.5-1.8B），会把提问当翻译处理。翻译引擎在「翻译」页配置。
+      </div>
+
+      <Input
+        label="SiliconFlow API Key（对话也用这把钥匙，sk-…）"
+        value={value.siliconflow_key ?? ''}
+        onChange={(e) => onChange({ siliconflow_key: e.target.value || null })}
+      />
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={sectionHint}>AI 对话模型（★ = 免费档，输入输出 ¥0）</span>
+        <Select
+          ariaLabel="SiliconFlow 对话模型"
+          value={value.siliconflow_chat_model || 'Qwen/Qwen2.5-7B-Instruct'}
+          options={SILICONFLOW_CHAT_MODELS.map((m) => ({ ...m, label: `★ ${m.label}` }))}
+          onChange={(v) => onChange({ siliconflow_chat_model: v })}
+        />
+        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
+          默认 Qwen2.5-7B-Instruct：免费通用对话模型，中文强，能理解译文上下文。
+        </span>
       </div>
     </>
   );
@@ -762,13 +806,15 @@ function TranslatePane({
         value={value.bing_region ?? ''}
         onChange={(e) => onChange({ bing_region: e.target.value || null })}
       />
+      <div style={sectionTitle}>本地翻译引擎（Ollama）</div>
+      <div style={sectionHint}>仅用于**翻译**降级链（本地快、免费）。不参与 AI 对话。</div>
       <Input
         label="本地大模型端点（Ollama 默认 http://127.0.0.1:11434）"
         value={llmEndpoint}
         onChange={(e) => onLlmChange({ llm_endpoint: e.target.value || null })}
       />
       <Input
-        label="本地大模型名（默认 qwen2.5）"
+        label="本地大模型名（默认 HY-MT1.5-1.8B:Q4_K_M）"
         value={llmModel}
         onChange={(e) => onLlmChange({ llm_model: e.target.value || null })}
       />
