@@ -172,7 +172,16 @@ impl AppState {
                                         orig.chars().count(),
                                         t.chars().count()
                                     ));
-                                    match appc3.emit("translation-ready", t) {
+                                    // 载荷与 selection_translate 分支保持一致：
+                                    // 必须是 { source, translation } 对象，
+                                    // 前端 main.tsx 按这两个字段读。
+                                    match appc3.emit(
+                                        "translation-ready",
+                                        serde_json::json!({
+                                            "source": orig,
+                                            "translation": t,
+                                        }),
+                                    ) {
                                         Ok(()) => crate::log::line("worker: emit translation-ready ok"),
                                         Err(e) => crate::log::line(&format!("worker: emit err {e}")),
                                     }
@@ -201,11 +210,35 @@ impl AppState {
                         let appc3 = appc2.clone();
                         std::thread::spawn(move || {
                             crate::log::line("worker(region): 弹出十字框选");
+                            // 框选前必须隐藏主窗口：pick_region 的冻结截图抓的是
+                            // 当时的桌面画面，主窗口若在前台，它会被一起冻进背景里，
+                            // 导致「框选主程序所在位置」时 OCR 读到的是旧界面内容。
+                            // 同时也让用户能看到并框选主程序之外的区域。
+                            let main_win = appc3.get_webview_window(MAIN_WINDOW_LABEL);
+                            if let Some(w) = main_win.as_ref() {
+                                if let Err(e) = w.hide() {
+                                    crate::log::line(&format!("worker(region): 隐藏主窗口失败 {e}"));
+                                }
+                            }
+                            // 无论后续是成功/取消/失败，都必须把主窗口恢复显示，
+                            // 否则用户会看到一个「消失的应用」。
+                            // 顺序同后文：先 unminimize 再 show。
+                            let restore_main = move || {
+                                if let Some(w) = main_win {
+                                    if let Err(e) = w.unminimize() {
+                                        crate::log::line(&format!("worker(region): 取消最小化失败 {e}"));
+                                    }
+                                    if let Err(e) = w.show() {
+                                        crate::log::line(&format!("worker(region): 恢复主窗口失败 {e}"));
+                                    }
+                                }
+                            };
                             // 阻塞直到用户框选完成/取消——必须在 worker 线程里跑：
                             // pick_region 内部要创建窗口并跑自己的消息循环。
                             let picked = match crate::window::region_picker::pick_region() {
                                 Ok(p) => p,
                                 Err(e) => {
+                                    restore_main();
                                     crate::log::line(&format!("worker(region): 框选失败 {e}"));
                                     let _ = appc3.emit("translation-error", format!("框选失败: {e}"));
                                     busy.store(false, Ordering::SeqCst);
@@ -213,6 +246,7 @@ impl AppState {
                                 }
                             };
                             let Some(r) = picked else {
+                                restore_main();
                                 crate::log::line("worker(region): 用户取消框选");
                                 busy.store(false, Ordering::SeqCst);
                                 return;
@@ -230,11 +264,37 @@ impl AppState {
                                         orig.chars().count(),
                                         t.chars().count()
                                     ));
-                                    let _ = appc3.emit("translation-ready", t);
+                                    // 事件载荷必须是 { source, translation } 对象：
+                                    // 前端 main.tsx 按这两个字段读，之前这里只发了
+                                    // 译文裸字符串，导致原文区与译文区都拿到 undefined。
+                                    let _ = appc3.emit(
+                                        "translation-ready",
+                                        serde_json::json!({
+                                            "source": orig,
+                                            "translation": t,
+                                        }),
+                                    );
                                 }
                                 Err(e) => {
                                     crate::log::line(&format!("worker(region): err {e}"));
                                     let _ = appc3.emit("translation-error", e);
+                                }
+                            }
+                            // 翻译完成后再显示并前置主窗口，让用户直接看到结果。
+                            // 顺序：先 unminimize 再 show——tao 的 Show 走
+                            // set_visible(true)/SW_SHOW，无法还原最小化状态，
+                            // 若主窗口本来是最小化的，必须先解除最小化。
+                            // 放在 emit 之后：先投递事件，再抢焦点，避免焦点切换
+                            // 与前端 setState 竞争导致首帧丢事件。
+                            if let Some(w) = appc3.get_webview_window(MAIN_WINDOW_LABEL) {
+                                if let Err(e) = w.unminimize() {
+                                    crate::log::line(&format!("worker(region): 取消最小化失败 {e}"));
+                                }
+                                if let Err(e) = w.show() {
+                                    crate::log::line(&format!("worker(region): 显示主窗口失败 {e}"));
+                                }
+                                if let Err(e) = w.set_focus() {
+                                    crate::log::line(&format!("worker(region): 聚焦主窗口失败 {e}"));
                                 }
                             }
                             busy.store(false, Ordering::SeqCst);
