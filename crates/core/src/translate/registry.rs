@@ -53,6 +53,42 @@ impl Registry {
             .map(|b| b.as_ref())
     }
 
+    /// 把降级链里**当前首选的可用引擎**往后挪一位，返回新的首选引擎 id。
+    ///
+    /// 供 `cycle_engine` 全局热键使用。语义要点：
+    /// - **只在可用引擎之间轮换**。缺密钥 / 未配置的引擎（`available()=false`）
+    ///   永远不会被选为首选，否则按一次热键就可能落到一个注定失败的引擎上。
+    /// - 不可用的引擎仍保留在链中，只是排在新首选之后——降级时照样能兜底。
+    /// - 只有 0 或 1 个可用引擎时返回 `None`（无从切换）。
+    ///
+    /// 返回值是新的 `fallback_order`，调用方负责持久化。
+    pub fn cycle_primary(&self, order: &[String]) -> Option<(String, Vec<String>)> {
+        let available: Vec<String> = order
+            .iter()
+            .filter(|id| self.get(id).map(|e| e.available()).unwrap_or(false))
+            .cloned()
+            .collect();
+        if available.len() < 2 {
+            return None;
+        }
+        // 新顺序：第 2 个可用引擎提到最前，其余保持原有相对顺序。
+        let mut next: Vec<String> = Vec::with_capacity(order.len());
+        next.push(available[1].clone());
+        for id in order {
+            if *id != available[0] {
+                next.push(id.clone());
+            }
+        }
+        // available[0] 落到可用引擎区末尾（即「第二可用」之后）。
+        let insert_at = next
+            .iter()
+            .position(|id| id == &available[1])
+            .map(|i| i + 1)
+            .unwrap_or(next.len());
+        next.insert(insert_at, available[0].clone());
+        Some((available[1].clone(), next))
+    }
+
     /// 依次尝试降级链中的引擎，返回首个成功且非空的译文。
     ///
     /// - 链内 unavailable 的引擎直接跳过（不网络请求）。
@@ -65,6 +101,22 @@ impl Registry {
         src: &str,
         dst: &str,
     ) -> Result<String> {
+        self.translate_with_fallback_detailed(order, text, src, dst)
+            .map(|r| r.text)
+    }
+
+    /// 同 [`Self::translate_with_fallback`]，但额外回报**实际出译文的引擎**。
+    ///
+    /// 必要性：降级链会静默换引擎（首选项缺密钥/超时就落到下一个），
+    /// 而原实现只返回译文字符串，把「谁翻译的」完全丢掉——状态栏因此
+    /// 只能显示前端本地 state 里的名义引擎，与实际严重不符。
+    pub fn translate_with_fallback_detailed(
+        &self,
+        order: &[String],
+        text: &str,
+        src: &str,
+        dst: &str,
+    ) -> Result<TranslationOutcome> {
         let candidates: Vec<&dyn TranslateBase> = order
             .iter()
             .filter_map(|id| self.get(id))
@@ -84,13 +136,38 @@ impl Registry {
         let mut errs: Vec<String> = Vec::new();
         for e in candidates {
             match translate_long(e, text, src, dst) {
-                Ok(t) if !t.trim().is_empty() => return Ok(t),
+                Ok(t) if !t.trim().is_empty() => {
+                    return Ok(TranslationOutcome {
+                        text: t,
+                        engine: e.id().to_string(),
+                        // 该引擎在**配置链**中的位置（1-based），用于状态栏
+                        // 显示「第 2/4 环」；不在链中（理论上不会发生）则 None。
+                        position: order.iter().position(|id| id == e.id()).map(|i| i + 1),
+                        chain_len: order.len(),
+                        tried: errs.len(),
+                    });
+                }
                 Ok(_) => errs.push(format!("{} 返回空译文", e.id())),
                 Err(err) => errs.push(format!("{}: {}", e.id(), err)),
             }
         }
         Err(AppError::Translate(format!("全部引擎失败（{}）", errs.join(" | "))))
     }
+}
+
+/// 一次降级链翻译的结果，含**实际服务该次翻译的引擎**。
+#[derive(Debug, Clone)]
+pub struct TranslationOutcome {
+    /// 译文正文
+    pub text: String,
+    /// 实际出译文的引擎 id
+    pub engine: String,
+    /// 该引擎在配置降级链中的位置（1-based）；不在链中则 None
+    pub position: Option<usize>,
+    /// 配置降级链总长度
+    pub chain_len: usize,
+    /// 本次之前有多少个引擎尝试失败
+    pub tried: usize,
 }
 
 /// 按引擎上限分片翻译，再按原顺序拼接。

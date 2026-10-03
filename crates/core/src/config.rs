@@ -23,9 +23,13 @@ use serde::{Deserialize, Serialize};
 /// 因此统一由 Rust 侧注册一次，前端不注册该键；录入口径也只有设置页这一处。
 ///
 /// 另一个理由：已实测 `window.__TAURI__` 未注入，页面内快捷键本来就收不到（见 §5.2 P1）。
+///
+/// - `cycle_engine`：把降级链里**可用**引擎的首选往后挪一位（即「换一个引擎用」）。
+///   只轮换可用引擎，跳过缺密钥的，否则按一次可能落到一个永远不可用的项上。
 pub const DEFAULT_HOTKEYS: &[(&str, &str)] = &[
     ("selection_translate", "Alt+Q"),
     ("fullscreen_translate", "Ctrl+Alt+O"),
+    ("cycle_engine", "Ctrl+Alt+E"),
 ];
 
 /// Translate 轴配置（M7 重构）：云引擎密钥 + 降级链。

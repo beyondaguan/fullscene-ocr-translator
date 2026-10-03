@@ -6,7 +6,7 @@ import { Chat, type ChatMessage } from './layouts/Chat';
 import { History, type HistoryItem } from './layouts/History';
 import { Settings, type SettingsData } from './layouts/Settings';
 import { useTheme } from './hooks/useTheme';
-import { createNativeMsgApi, type EngineInfo, type NativeMsgApi } from './hooks/useNativeMsg';
+import { createNativeMsgApi, type EngineInfo, type NativeMsgApi, type PipelineSnapshot } from './hooks/useNativeMsg';
 import { StatusDot } from './components/StatusBar';
 import { countChars } from './utils/text';
 import './tokens.css';
@@ -23,6 +23,7 @@ async function pullResult(
   api: NativeMsgApi,
   setSource: (v: string) => void,
   setTranslation: (v: string) => void,
+  setLastRun?: (v: PipelineSnapshot) => void,
 ): Promise<void> {
   try {
     const r = await api.getResult();
@@ -30,6 +31,7 @@ async function pullResult(
     // 只在确有内容时覆盖，避免把界面上用户手动编辑的文字清空。
     if (r.source) setSource(r.source);
     if (r.translation) setTranslation(r.translation);
+    if (setLastRun && r.updated_at_ms > 0) setLastRun(r);
   } catch {
     // 桥未就绪时静默失败：这是兜底路径，主路径仍是事件。
   }
@@ -77,6 +79,8 @@ function Root() {
   const [configPath, setConfigPath] = React.useState('');
   const [engines, setEngines] = React.useState<EngineInfo[]>([]);
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
+  /** 最近一次管线的引擎信息（状态栏显示「实际是谁翻译的」）。 */
+  const [lastRun, setLastRun] = React.useState<PipelineSnapshot | null>(null);
 
   const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([]);
   const [chatStreaming, setChatStreaming] = React.useState(false);
@@ -112,6 +116,7 @@ function Root() {
     if (label !== 'main') return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
+    let unlistenCycle: (() => void) | undefined;
     let timer: number | undefined;
     let tries = 0;
 
@@ -132,7 +137,26 @@ function Root() {
         setSource(e.payload?.source ?? '');
         setTranslation(e.payload?.translation ?? '');
         api.getHistory(50).then((h) => setHistory(h as HistoryItem[])).catch(() => {});
+        // 事件载荷不含「实际服务引擎」，补拉一次权威快照供状态栏显示。
+        pullResult(api, setSource, setTranslation, setLastRun);
       });
+      // `cycle_engine` 全局热键（Ctrl+Alt+E）切换首选引擎后 Rust 广播此事件。
+      // 收到就重拉配置 + 结果，让状态栏与设置页立即反映新的降级链顺序。
+      const c = listen('engine-cycled', () => {
+        api.getStatus()
+          .then((st) => setConfig((st.config ?? {}) as SettingsData))
+          .catch(() => {});
+        pullResult(api, setSource, setTranslation, setLastRun);
+      });
+      if (c && typeof c.then === 'function') {
+        c.then((u: () => void) => {
+          if (disposed) {
+            u?.();
+            return;
+          }
+          unlistenCycle = u;
+        }).catch(() => {});
+      }
       if (p && typeof p.then === 'function') {
         p.then((u: () => void) => {
           if (disposed) {
@@ -143,7 +167,7 @@ function Root() {
           console.log('[fs] translation-ready listener attached after', tries, 'retry(ies)');
           // 兜底 #1：监听刚就绪就主动拉一次。若上一次结果是在监听注册前
           // 产生的（例如程序刚启动时用户就按了热键），这里能把它捞回来。
-          pullResult(api, setSource, setTranslation);
+          pullResult(api, setSource, setTranslation, setLastRun);
         }).catch((err: unknown) => {
           console.error('[fs] listen 注册失败', err);
         });
@@ -155,7 +179,7 @@ function Root() {
     // 事件是单向的、可能丢失；窗口可见性变化是可靠信号，能兜住绝大多数丢事件场景。
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
-        pullResult(api, setSource, setTranslation);
+        pullResult(api, setSource, setTranslation, setLastRun);
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -166,6 +190,7 @@ function Root() {
       if (timer !== undefined) window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
+      if (unlistenCycle) unlistenCycle();
       if (unlisten) unlisten();
     };
   }, [api, label]);
@@ -392,6 +417,34 @@ function Root() {
 
   const engineLabel = ENGINES.find((e) => e.value === engine)?.label ?? engine;
   const charCount = countChars(source) + countChars(translation);
+  // 降级链的可读文本（状态栏 tooltip 用）：把 id 翻成 label，未知 id 原样显示。
+  const fallbackChainLabel = (config.translate?.fallback_order ?? [])
+    .map((id: string) => engines.find((e) => e.id === id)?.label ?? id)
+    .join(' → ') || '（未配置）';
+
+  // 状态栏引擎显示：**实际服务的那一个**，而不是配置链首项。
+  // 降级链会在首选缺密钥/超时时静默换引擎，只显示名义值会误导用户
+  // （以为在用 SiliconFlow，实际跑的是 MyMemory）。
+  const actualEngineId = lastRun?.engine ?? '';
+  const actualEngineLabel = actualEngineId
+    ? (engines.find((e) => e.id === actualEngineId)?.label ??
+       ENGINES.find((e) => e.value === actualEngineId)?.label ??
+       actualEngineId)
+    : '';
+  const engineCell = actualEngineId && actualEngineId !== 'none' ? (
+    <span key="engine" title={`降级链：${fallbackChainLabel}`}>
+      引擎 · {actualEngineLabel}
+      {lastRun && lastRun.engine_chain_len > 0
+        ? ` (第 ${lastRun.engine_position}/${lastRun.engine_chain_len} 环)`
+        : ''}
+      {lastRun && lastRun.engines_tried > 0 ? ` · 降级 ${lastRun.engines_tried} 次` : ''}
+    </span>
+  ) : (
+    // 尚无翻译结果：显示配置链首选（明确标注「首选」，避免误认为已实际使用）
+    <span key="engine" title={`降级链：${fallbackChainLabel}`}>
+      引擎 · {engineLabel}（首选，未使用）
+    </span>
+  );
 
   const statusLeft: React.ReactNode[] = [
     <span key="brand">全场景OCR翻译</span>,
@@ -399,7 +452,7 @@ function Root() {
       <StatusDot tone={ocrReady ? 'ok' : 'warn'} />
       <span>{ocrReady ? 'OCR 就绪' : 'OCR 降级'}</span>
     </React.Fragment>,
-    <span key="engine">引擎 · {engineLabel}</span>,
+    engineCell,
     <span key="count">{charCount} 字</span>,
   ];
 

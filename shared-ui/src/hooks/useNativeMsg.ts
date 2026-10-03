@@ -28,6 +28,14 @@ export interface PipelineSnapshot {
   translation: string;
   source_lang: string;
   updated_at_ms: number;
+  /** 最近一次实际服务翻译的引擎 id（降级链可能与配置首项不同） */
+  engine: string;
+  /** 该引擎在配置降级链中的位置（1-based，0 = 不在链中/未发生翻译） */
+  engine_position: number;
+  /** 配置降级链总长度 */
+  engine_chain_len: number;
+  /** 本次翻译前有几个引擎尝试失败 */
+  engines_tried: number;
 }
 
 export interface NativeMsgApi {

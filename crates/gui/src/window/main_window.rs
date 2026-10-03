@@ -30,6 +30,17 @@ pub struct PipelineResult {
     pub source_lang: String,
     /// 最近一次更新时间戳（毫秒），前端据此判断是否有新结果
     pub updated_at_ms: u64,
+    /// 最近一次**实际服务翻译**的引擎 id。
+    ///
+    /// 必要性：降级链会在首选引擎缺密钥/超时时静默落到下一个，只显示配置
+    /// 链首项会与实际不符（用户会以为在用 SiliconFlow，其实跑的是 MyMemory）。
+    pub engine: String,
+    /// 实际引擎在配置降级链中的位置（1-based）；不在链中则 0。
+    pub engine_position: usize,
+    /// 配置降级链总长度。
+    pub engine_chain_len: usize,
+    /// 本次翻译前有几个引擎尝试失败（0 = 首选引擎一次成功）。
+    pub engines_tried: usize,
 }
 
 impl PipelineResult {
@@ -306,6 +317,50 @@ impl AppState {
                         crate::log::line("hotkey(region): dispatched");
                     })
                 }
+                "cycle_engine" => {
+                    let appc2 = appc.clone();
+                    Box::new(move || {
+                        crate::log::line("hotkey: cycle_engine triggered");
+                        // 不进管线（只改配置），故无需 pipeline_busy 重入保护，
+                        // 也不需要 spawn 线程：轮换是纯内存操作 + 一次落盘，耗时微秒级。
+                        // 仍放到线程里，避免落盘 IO 挡住 Win32 消息泵。
+                        let appc3 = appc2.clone();
+                        std::thread::spawn(move || {
+                            let st = appc3.state::<AppState>();
+                            let (new_primary, new_order) = {
+                                let tr = st.translator.lock().unwrap();
+                                match tr.cycle_primary() {
+                                    Some(v) => v,
+                                    None => {
+                                        crate::log::line(
+                                            "hotkey(cycle): 可用引擎不足 2 个，无法切换",
+                                        );
+                                        return;
+                                    }
+                                }
+                            };
+                            // 落盘 + 重建 translator + 热重载热键表
+                            let mut cfg = st.config.lock().unwrap().clone();
+                            if let Some(t) = cfg.translate.as_mut() {
+                                t.fallback_order = new_order.clone();
+                            }
+                            if let Err(e) = st.update_config(cfg) {
+                                crate::log::line(&format!("hotkey(cycle): 写配置失败 {e}"));
+                                return;
+                            }
+                            if let Err(e) = st.reload_global_hotkeys(&appc3) {
+                                crate::log::line(&format!("hotkey(cycle): 重载热键失败 {e}"));
+                            }
+                            crate::log::line(&format!(
+                                "hotkey(cycle): 新首选={} chain=[{}]",
+                                new_primary,
+                                new_order.join(" → ")
+                            ));
+                            // 通知前端刷新状态栏
+                            let _ = appc3.emit("engine-cycled", new_primary);
+                        });
+                    })
+                }
                 _ => continue,
             };
             actions.push(HotkeyAction {
@@ -332,6 +387,18 @@ impl AppState {
     pub fn translate(&self, text: &str, src: &str, dst: &str) -> Result<String> {
         let tr = self.translator.lock().unwrap();
         tr.translate(text, src, dst)
+    }
+
+    /// 同 [`Self::translate`]，但回报**实际服务引擎**（降级链可能静默换引擎）。
+    pub fn translate_detailed(
+        &self,
+        text: &str,
+        src: &str,
+        dst: &str,
+    ) -> std::result::Result<fs_core::translate::TranslationOutcome, String> {
+        let tr = self.translator.lock().unwrap();
+        tr.translate_detailed(text, src, dst)
+            .map_err(|e| e.to_string())
     }
 
     /// 完整管线：源/目标语言由调用方指定（默认 `"auto"`/`"zh"` 见 [`Self::screenshot_translate`](crate::commands)）。
@@ -390,24 +457,42 @@ impl AppState {
         //    短路：OCR 出来的已经是中文、目标也是中文时**不要**发请求——
         //    MyMemory / Google 会回 403「PLEASE SELECT TWO DISTINCT LANGUAGES」，
         //    降级链一路失败，用户看到「翻译失败」，而实际上只是无需翻译。
-        let t = if fs_core::lang::is_chinese_target(dst) && fs_core::lang::is_mostly_cjk(&text) {
+        //    走 detailed 版以拿到「实际服务引擎」，写入共享结果供状态栏显示。
+        let outcome = if fs_core::lang::is_chinese_target(dst) && fs_core::lang::is_mostly_cjk(&text) {
             crate::log::line("pipe: 原文已是中文，跳过翻译直接回填");
-            text.clone()
+            fs_core::translate::TranslationOutcome {
+                text: text.clone(),
+                engine: "none".into(),
+                position: None,
+                chain_len: 0,
+                tried: 0,
+            }
         } else {
             // 错误信息里只带原文前 60 字：整段回填会把日志文件淹掉，
             // 让真正有用的结构化日志行被埋在几百行 OCR 文本里（2026-10-03 踩过）。
             let preview: String = text.chars().take(60).collect();
-            let t = self
-                .translate(&text, src, dst)
+            let o = self
+                .translate_detailed(&text, src, dst)
                 .map_err(|e| format!("翻译失败: {e}（原文前 60 字：{preview}）"))?;
-            crate::log::line(&format!("pipe: translated {} chars", t.chars().count()));
-            t
+            crate::log::line(&format!(
+                "pipe: translated {} chars by engine={} (chain {}/{})",
+                o.text.chars().count(),
+                o.engine,
+                o.position.unwrap_or(0),
+                o.chain_len
+            ));
+            o
         };
+        let t = outcome.text.clone();
         // 4. 写入共享结果
         if let Ok(mut g) = self.gui_result.lock() {
             g.original = text.clone();
             g.translation = t.clone();
             g.source_lang = src.to_string();
+            g.engine = outcome.engine.clone();
+            g.engine_position = outcome.position.unwrap_or(0);
+            g.engine_chain_len = outcome.chain_len;
+            g.engines_tried = outcome.tried;
             g.updated_at_ms = now_ms();
         }
         Ok((text, t))

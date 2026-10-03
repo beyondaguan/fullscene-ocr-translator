@@ -168,6 +168,14 @@ pub struct PipelineSnapshot {
     pub translation: String,
     pub source_lang: String,
     pub updated_at_ms: u64,
+    /// 最近一次实际服务翻译的引擎 id（状态栏显示用）
+    pub engine: String,
+    /// 该引擎在配置降级链中的位置（1-based，0 = 不在链中/无翻译发生）
+    pub engine_position: usize,
+    /// 配置降级链总长度
+    pub engine_chain_len: usize,
+    /// 本次翻译前有几个引擎尝试失败
+    pub engines_tried: usize,
 }
 
 #[tauri::command]
@@ -181,6 +189,10 @@ pub fn get_result(state: State<'_, AppState>) -> Result<PipelineSnapshot, String
         translation: g.translation.clone(),
         source_lang: g.source_lang.clone(),
         updated_at_ms: g.updated_at_ms,
+        engine: g.engine.clone(),
+        engine_position: g.engine_position,
+        engine_chain_len: g.engine_chain_len,
+        engines_tried: g.engines_tried,
     })
 }
 

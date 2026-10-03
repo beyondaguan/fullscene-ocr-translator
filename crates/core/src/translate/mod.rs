@@ -10,7 +10,7 @@ pub mod http;
 pub mod registry;
 
 pub use base::TranslateBase;
-pub use registry::Registry;
+pub use registry::{Registry, TranslationOutcome};
 
 use crate::config::Config;
 use crate::error::{AppError, Result};
@@ -52,6 +52,15 @@ impl Translator {
             .translate_with_fallback(&self.fallback_order, text, src, dst)
     }
 
+    /// 同 [`Self::translate`]，但额外回报**实际服务的引擎**与它在降级链中的位置。
+    ///
+    /// 状态栏需要显示「实际是谁翻译的」——降级链会静默换引擎，
+    /// 只看配置链首项会与实际不符。
+    pub fn translate_detailed(&self, text: &str, src: &str, dst: &str) -> Result<TranslationOutcome> {
+        self.registry
+            .translate_with_fallback_detailed(&self.fallback_order, text, src, dst)
+    }
+
     /// 指定引擎翻译（设置界面「使用此引擎」）。
     pub fn translate_with(&self, engine_id: &str, text: &str, src: &str, dst: &str) -> Result<String> {
         let e = self
@@ -69,6 +78,13 @@ impl Translator {
             .select(&self.fallback_order)
             .map(|e| e.id())
             .unwrap_or("none")
+    }
+
+    /// 把首选可用引擎往后挪一位（`cycle_engine` 全局热键）。
+    ///
+    /// 返回 `(新首选引擎 id, 新的完整降级链)`；可用引擎不足 2 个时返回 `None`。
+    pub fn cycle_primary(&self) -> Option<(String, Vec<String>)> {
+        self.registry.cycle_primary(&self.fallback_order)
     }
 
     /// 列出全部已注册引擎（含可用状态），供设置界面渲染。
