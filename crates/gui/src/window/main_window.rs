@@ -176,16 +176,18 @@ impl AppState {
                         std::thread::spawn(move || {
                             crate::log::line("worker: start");
                             let st2 = appc3.state::<AppState>();
-                            match st2.run_translation_pipeline_with("auto", "zh") {
-                                Ok((orig, t)) => {
+                            // catch_unwind：管线内若发生未预期 Rust panic，
+                            // 由「静默退出」变为「记日志 + 报错事件」，便于定位 #5。
+                            let pipe = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                st2.run_translation_pipeline_with("auto", "zh")
+                            }));
+                            match pipe {
+                                Ok(Ok((orig, t))) => {
                                     crate::log::line(&format!(
                                         "worker: pipeline ok (orig {} chars / trans {} chars)",
                                         orig.chars().count(),
                                         t.chars().count()
                                     ));
-                                    // 载荷与 selection_translate 分支保持一致：
-                                    // 必须是 { source, translation } 对象，
-                                    // 前端 main.tsx 按这两个字段读。
                                     match appc3.emit(
                                         "translation-ready",
                                         serde_json::json!({
@@ -197,9 +199,13 @@ impl AppState {
                                         Err(e) => crate::log::line(&format!("worker: emit err {e}")),
                                     }
                                 }
-                                Err(e) => {
+                                Ok(Err(e)) => {
                                     crate::log::line(&format!("worker: pipeline err {e}"));
                                     let _ = appc3.emit("translation-error", e);
+                                }
+                                Err(_) => {
+                                    crate::log::line("worker: pipeline PANIC 被捕获（详见上方日志）");
+                                    let _ = appc3.emit("translation-error", "翻译管线内部错误（已记录日志）");
                                 }
                             }
                             busy.store(false, Ordering::SeqCst);
@@ -268,18 +274,17 @@ impl AppState {
                             ));
                             let st2 = appc3.state::<AppState>();
                             let target = CaptureTarget::Region { x: r.x, y: r.y, w: r.w, h: r.h };
-                            match st2.run_translation_pipeline_with_target(target, "auto", "zh") {
-                                Ok((orig, t)) => {
+                            // catch_unwind：同整屏管线，未预期 panic 由静默退出转为记日志 + 报错。
+                            let pipe = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                st2.run_translation_pipeline_with_target(target, "auto", "zh")
+                            }));
+                            match pipe {
+                                Ok(Ok((orig, t))) => {
                                     crate::log::line(&format!(
                                         "worker(region): ok (orig {} / trans {})",
                                         orig.chars().count(),
                                         t.chars().count()
                                     ));
-                                    // 事件载荷必须是 { source, translation } 对象：
-                                    // 前端 main.tsx 按这两个字段读，之前这里只发了
-                                    // 译文裸字符串，导致原文区与译文区都拿到 undefined。
-                                    // 必须检查返回值：let _ = 会把投递失败一并吞掉，
-                                    // 表现为「Rust 日志一切正常但前端永远空白」。
                                     let payload = serde_json::json!({
                                         "source": orig,
                                         "translation": t,
@@ -289,9 +294,13 @@ impl AppState {
                                         Err(e) => crate::log::line(&format!("worker(region): emit 失败 {e}")),
                                     }
                                 }
-                                Err(e) => {
+                                Ok(Err(e)) => {
                                     crate::log::line(&format!("worker(region): err {e}"));
                                     let _ = appc3.emit("translation-error", e);
+                                }
+                                Err(_) => {
+                                    crate::log::line("worker(region): pipeline PANIC 被捕获（详见上方日志）");
+                                    let _ = appc3.emit("translation-error", "翻译管线内部错误（已记录日志）");
                                 }
                             }
                             // 翻译完成后再显示并前置主窗口，让用户直接看到结果。
