@@ -139,9 +139,13 @@ impl Translator {
     }
 }
 
-/// 内置默认降级链：免密钥引擎优先，本地 LLM 兜底。
+/// 内置默认降级链：免密钥在线优先，`argos` 离线兜底（排最后）。
+///
+/// ⚠️ 必须与 [`crate::config::TranslateConfig::default()`] 的 `fallback_order`
+/// **逐项一致**，也与前端 `Settings.tsx` 的 `DEFAULT_ORDER` 一致。
+/// 三处不同步会导致「设置页显示的顺序」与「实际引擎选择」不符。
 fn default_fallback_order() -> Vec<String> {
-    vec!["mymemory".into(), "google".into(), "local-llm".into()]
+    vec!["mymemory".into(), "google".into(), "local-llm".into(), "argos".into()]
 }
 
 #[cfg(test)]
@@ -217,10 +221,18 @@ mod tests {
 
     #[test]
     fn from_config_uses_builtin_default_fallback_when_unset() {
+        // `Config::default().translate` 是 None（Option + serde(default)），
+        // 故 `default_fallback_order()` 才是「无 translate 段时实际生效的默认链」，
+        // 它必须与 `TranslateConfig::default().fallback_order` 一致。
         let tr = Translator::from_config(&Config::default());
         assert_eq!(
             tr.fallback_order(),
-            &["mymemory".to_string(), "google".to_string(), "local-llm".to_string()]
+            &[
+                "mymemory".to_string(),
+                "google".to_string(),
+                "local-llm".to_string(),
+                "argos".to_string()
+            ]
         );
     }
 
@@ -242,5 +254,37 @@ mod tests {
         let tr = Translator::from_config(&Config::default());
         let err = tr.translate_with("nope", "x", "auto", "zh").unwrap_err();
         assert!(err.to_string().contains("未知引擎"));
+    }
+
+    #[test]
+    fn builtin_default_order_matches_config_default() {
+        // 三处默认降级链必须一致：`config.rs` 的 `TranslateConfig::default()`、
+        // 本模块的 `default_fallback_order()`、前端 `Settings.tsx` 的 `DEFAULT_ORDER`。
+        // 曾漂移过一次：`default_fallback_order` 漏了 argos，而它正是「Config 无 translate 段」
+        // （`Config::default().translate == None`）时**实际生效**的默认值。
+        let builtin = default_fallback_order();
+        let from_config = crate::config::TranslateConfig::default().fallback_order;
+        assert_eq!(
+            builtin, from_config,
+            "内置默认降级链与 TranslateConfig::default() 不一致"
+        );
+        assert!(
+            builtin.last().map(|s| s.as_str()) == Some("argos"),
+            "argos 必须排最后（离线兜底），实际 {builtin:?}"
+        );
+    }
+
+    #[test]
+    fn chat_never_uses_translation_only_engines() {
+        // oracle: 对话只走通用对话引擎（siliconflow → openai），
+        // 绝不落到翻译专用引擎（local-llm 跑的是 Hunyuan-MT/ARGOS 等翻译模型）——
+        // 那会把用户提问当翻译处理（历史 Bug A 的根因）。
+        let builtin = default_fallback_order();
+        for chat_only in ["siliconflow", "openai"] {
+            assert!(
+                !builtin.contains(&chat_only.to_string()),
+                "{chat_only} 是对话引擎，不该在翻译降级链默认值里"
+            );
+        }
     }
 }

@@ -846,18 +846,30 @@ function TranslatePane({
         value={value.siliconflow_base_url ?? ''}
         onChange={(e) => onChange({ siliconflow_base_url: e.target.value || null })}
       />
+
+      {/* OpenAI / 兼容网关：AI 助手对话与翻译共用同一组凭据，故独立分组说明用途 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 'var(--spacing-sm)' }}>
+        <span style={{ ...sectionTitle, margin: 0 }}>OpenAI / 兼容网关</span>
+        <span style={sectionHint}>
+          适用于任何 OpenAI 兼容接口（官方 / Azure / DeepSeek / Kimi / 智谱等）。
+          <b>对话与翻译共用这一组凭据</b>：AI 助手（Alt+3）按「OpenAI 模型」请求，
+          翻译降级链里若选中 openai 引擎则按同一模型翻译——翻译场景建议填
+          <code> gpt-4o-mini</code> 这类便宜的小模型，对话场景可换强模型。
+          留空则只用 SiliconFlow 对话。
+        </span>
+      </div>
       <Input
         label="OpenAI API Key"
         value={value.openai_key ?? ''}
         onChange={(e) => onChange({ openai_key: e.target.value || null })}
       />
       <Input
-        label="OpenAI 模型（默认 gpt-4o-mini）"
+        label="OpenAI 模型（对话与翻译共用，默认 gpt-4o-mini）"
         value={value.openai_model ?? ''}
         onChange={(e) => onChange({ openai_model: e.target.value || null })}
       />
       <Input
-        label="OpenAI Base URL（可指向任意兼容网关）"
+        label="OpenAI Base URL（可指向任意兼容网关，如 https://api.deepseek.com/v1）"
         value={value.openai_base_url ?? ''}
         onChange={(e) => onChange({ openai_base_url: e.target.value || null })}
       />
