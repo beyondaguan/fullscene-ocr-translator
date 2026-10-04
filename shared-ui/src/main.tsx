@@ -72,10 +72,31 @@ function Root() {
 
   const [srcLang, setSrcLang] = React.useState('auto');
   const [dstLang, setDstLang] = React.useState('zh');
-  const [engine, setEngine] = React.useState('local-llm');
-
   const [ocrReady, setOcrReady] = React.useState(false);
   const [config, setConfig] = React.useState<SettingsData>({});
+  // ★ engine 必须与 config.translate.fallback_order[0] 同步，而非写死初值。
+  //    首次从配置恢复（否则刷新后回到 local-llm 造成与状态栏不同步），
+  //    并在 config 变更（热键切换引擎、重载配置）时跟随更新。
+  const [engine, setEngine] = React.useState(() => {
+    // 尝试从 localStorage 恢复上次的首选引擎（config state 还未初始化）
+    try {
+      const saved = localStorage.getItem('fs-config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed?.translate?.fallback_order?.[0] ?? 'local-llm';
+      }
+    } catch {}
+    return 'local-llm';
+  });
+  // config 变更时同步下拉框选中值（防止右上角与底部状态栏引擎显示不同步）
+  const lastPreferredRef = React.useRef('');
+  React.useEffect(() => {
+    const pref = config.translate?.fallback_order?.[0] ?? '';
+    if (pref && pref !== lastPreferredRef.current) {
+      lastPreferredRef.current = pref;
+      setEngine(pref);
+    }
+  }, [config.translate?.fallback_order?.[0]]);
   const [configPath, setConfigPath] = React.useState('');
 
   // config 的最新值镜像：保存配置时若直接闭包捕获 config，会读到调用时刻的
@@ -190,7 +211,7 @@ function Root() {
         pullResult(api, setSource, setTranslation, setLastRun);
       });
       // `cycle_engine` 全局热键（Ctrl+Alt+E）切换首选引擎后 Rust 广播此事件。
-      // 收到就弹出 toast + 重拉配置 + 结果，让状态栏与设置页立即反映新的降级链顺序。
+      // 收到就弹出 toast + 重拉配置 + 引擎列表 + 结果，让下拉框、状态栏与设置页立即反映新的降级链顺序。
       const c = listen('engine-cycled', (e: { payload?: string }) => {
         const newPrimary = e?.payload ?? '';
         if (newPrimary) {
@@ -199,9 +220,14 @@ function Root() {
             ENGINES.find((x) => x.value === newPrimary)?.label ??
             newPrimary;
           showToast(`已切换至 ${label}`);
+          setEngine(newPrimary); // ★ 同步下拉框选中值
         }
         api.getStatus()
           .then((st) => setConfig((st.config ?? {}) as SettingsData))
+          .catch(() => {});
+        api
+          .listEngines()
+          .then(setEngines) // ★ 刷新引擎列表（含可用性变化 / 新注册引擎如 argos）
           .catch(() => {});
         pullResult(api, setSource, setTranslation, setLastRun);
       });
