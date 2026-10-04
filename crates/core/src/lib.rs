@@ -8,6 +8,7 @@
 //! - [`translate`] Translate 轴：引擎 trait + 注册表 + 编排器（本地 LLM / 云端降级）
 //! - [`database`] SQLite 历史库
 //! - [`screenshot`] / [`hotkey`] Windows 截图与全局热键（`cfg(windows)`）
+//! - [`wordpick`] 划词取词内核：UIA → 剪贴板 → 截屏 OCR 三级降级（`cfg(windows)`）
 //! - [`types`] 双端共享数据类型（含 Native Messaging 协议载体）
 
 #![warn(clippy::all)]
@@ -27,5 +28,7 @@ pub mod hotkey;
 pub mod lang;
 #[cfg(windows)]
 pub mod screenshot;
+#[cfg(windows)]
+pub mod wordpick;
 
 pub use error::{AppError, Result};

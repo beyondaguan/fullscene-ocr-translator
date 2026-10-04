@@ -60,4 +60,15 @@ features = [
     "Win32_UI_Shell",
     # 十字框选需要 Per-Monitor DPI 感知：否则多显示器/缩放屏下鼠标坐标与窗口像素错位
     "Win32_UI_HiDpi",
+    # ---- 划词取词（ADR-006）----
+    # IUIAutomation / IUIAutomationTextPattern：主路径读应用内划选文本
+    "Win32_UI_Accessibility",
+    # CoInitializeEx / CoCreateInstance：UIA 与 SAPI5 均为 COM 对象，必须先初始化 COM 单元
+    "Win32_System_Com",
+    # OpenClipboard / GetClipboardData / GetClipboardSequenceNumber：UIA 失败时的兜底路径
+    "Win32_System_DataExchange",
+    # GlobalLock / GlobalSize：把 GetClipboardData 返回的 HGLOBAL 锁成 UTF-16 字符串
+    "Win32_System_Memory",
+    # CF_UNICODETEXT 常量定义在 System::Ole 而非 DataExchange（易踩坑）
+    "Win32_System_Ole",
 ]
