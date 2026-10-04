@@ -349,10 +349,11 @@ impl AppState {
                         let appc3 = appc2.clone();
                         std::thread::spawn(move || {
                             let st = appc3.state::<AppState>();
-                            let (new_primary, new_order) = {
+                            let (before, new_primary, new_order) = {
                                 let tr = st.translator.lock().unwrap();
+                                let before = tr.fallback_order().to_vec();
                                 match tr.cycle_primary() {
-                                    Some(v) => v,
+                                    Some((p, o)) => (before, p, o),
                                     None => {
                                         crate::log::line(
                                             "hotkey(cycle): 可用引擎不足 2 个，无法切换",
@@ -361,6 +362,10 @@ impl AppState {
                                     }
                                 }
                             };
+                            crate::log::line(&format!(
+                                "hotkey(cycle): 触发前链=[{}]",
+                                before.join(" → ")
+                            ));
                             // 落盘 + 重建 translator + 热重载热键表
                             let mut cfg = st.config.lock().unwrap().clone();
                             if let Some(t) = cfg.translate.as_mut() {
@@ -378,8 +383,28 @@ impl AppState {
                                 new_primary,
                                 new_order.join(" → ")
                             ));
-                            // 通知前端刷新状态栏
-                            let _ = appc3.emit("engine-cycled", new_primary);
+                            // 通知前端刷新状态栏（结果必须留痕：此前 `let _ =` 完全吞掉错误，
+                            // 若 emit 失败，前端 UI 不会变，用户只看到「热键按了没反应」）
+                            match appc3.emit("engine-cycled", &new_primary) {
+                                Ok(()) => crate::log::line("hotkey(cycle): emit engine-cycled ok"),
+                                Err(e) => crate::log::line(&format!(
+                                    "hotkey(cycle): emit engine-cycled 失败 {e}"
+                                )),
+                            }
+                            // 双保险：事件系统若因前端监听未注册/未送达而失效，直接 eval 调
+                            // 前端全局函数（main.tsx 暴露的 window.__fs_on_engine_cycled），
+                            // 保证热键切换后下拉框/状态栏/设置页一定同步。
+                            if let Some(w) = appc3.get_webview_window("main") {
+                                let js = format!(
+                                    "window.__fs_on_engine_cycled && window.__fs_on_engine_cycled({:?})",
+                                    new_primary
+                                );
+                                if let Err(e) = w.eval(&js) {
+                                    crate::log::line(&format!(
+                                        "hotkey(cycle): eval 同步前端失败 {e}"
+                                    ));
+                                }
+                            }
                         });
                     })
                 }
@@ -401,14 +426,15 @@ impl AppState {
                         let appc3 = appc2.clone();
                         std::thread::spawn(move || {
                             // ① 取词。UIA 主路径 → 剪贴板兜底（阶段 A 已实现）。
-                            //    失败则降级到截屏 OCR（B4 阶段做），本阶段只记日志。
+                            //    失败则降级到「框选取词」兜底（B4）：复用 region_picker
+                            //    → 截图 → OCR → 翻译，把结果回填主窗口。
                             let sel = match fs_core::wordpick::read_selection() {
                                 Ok(s) => s,
                                 Err(e) => {
                                     crate::log::line(&format!(
-                                        "hotkey(word): 取词失败（应降级到截屏 OCR，B4 实现）: {e}"
+                                        "hotkey(word): 取词失败，降级到框选取词（B4）: {e}"
                                     ));
-                                    st2_word_bubble_reset(&appc3);
+                                    fallback_to_region_ocr(&appc3);
                                     return;
                                 }
                             };
@@ -735,6 +761,111 @@ fn st2_word_bubble_reset(app: &AppHandle) {
     st.word_bubble_active
         .store(false, std::sync::atomic::Ordering::SeqCst);
     crate::log::line("hotkey(word): 浮窗标记已复位");
+}
+
+/// 划词取词失败的「框选取词」兜底（阶段 B4）。
+///
+/// 复用 `region_picker` 的十字框选 + 既有截图 OCR 管线：
+/// 1. 隐藏主窗口（框选冻结图不能包含主程序自身）；
+/// 2. 阻塞等待用户框选/取消；
+/// 3. 框选成功 → `run_translation_pipeline_with_target(Region)` → emit `translation-ready`；
+/// 4. 无论成功/取消/失败，恢复主窗口并复位 `word_bubble_active`。
+///
+/// 必须在 worker 线程调用（`pick_region` 内部创建窗口并跑自己的消息循环）。
+fn fallback_to_region_ocr(app: &AppHandle) {
+    // 隐藏主窗口：pick_region 的冻结截图抓的是当时桌面画面，主窗口若在前台
+    // 会被一起冻进背景里，导致框选主程序所在位置时 OCR 读到旧界面内容。
+    let main_win = app.get_webview_window(MAIN_WINDOW_LABEL);
+    if let Some(w) = main_win.as_ref() {
+        if let Err(e) = w.hide() {
+            crate::log::line(&format!("worker(word-fallback): 隐藏主窗口失败 {e}"));
+        }
+    }
+    // 无论后续成功/取消/失败，都必须恢复主窗口，否则用户看到「消失的应用」。
+    // 顺序：先 unminimize 再 show。
+    let restore_main = move || {
+        if let Some(w) = main_win {
+            if let Err(e) = w.unminimize() {
+                crate::log::line(&format!("worker(word-fallback): 取消最小化失败 {e}"));
+            }
+            if let Err(e) = w.show() {
+                crate::log::line(&format!("worker(word-fallback): 恢复主窗口失败 {e}"));
+            }
+        }
+    };
+
+    // 阻塞直到用户框选完成/取消。
+    let picked = match crate::window::region_picker::pick_region() {
+        Ok(p) => p,
+        Err(e) => {
+            restore_main();
+            crate::log::line(&format!("worker(word-fallback): 框选失败 {e}"));
+            let _ = app.emit("translation-error", format!("框选取词失败: {e}"));
+            st2_word_bubble_reset(app);
+            return;
+        }
+    };
+    let Some(r) = picked else {
+        restore_main();
+        crate::log::line("worker(word-fallback): 用户取消框选取词");
+        st2_word_bubble_reset(app);
+        return;
+    };
+    crate::log::line(&format!(
+        "worker(word-fallback): 选中 {}x{} @({},{})",
+        r.w, r.h, r.x, r.y
+    ));
+
+    let st = app.state::<AppState>();
+    let target = fs_core::types::CaptureTarget::Region {
+        x: r.x,
+        y: r.y,
+        w: r.w,
+        h: r.h,
+    };
+    let pipe = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        st.run_translation_pipeline_with_target(target, "auto", "zh")
+    }));
+    match pipe {
+        Ok(Ok((orig, t))) => {
+            crate::log::line(&format!(
+                "worker(word-fallback): ok (orig {} / trans {})",
+                orig.chars().count(),
+                t.chars().count()
+            ));
+            let payload = serde_json::json!({
+                "source": orig,
+                "translation": t,
+            });
+            match app.emit("translation-ready", payload) {
+                Ok(()) => crate::log::line("worker(word-fallback): emit translation-ready ok"),
+                Err(e) => crate::log::line(&format!("worker(word-fallback): emit 失败 {e}")),
+            }
+        }
+        Ok(Err(e)) => {
+            crate::log::line(&format!("worker(word-fallback): 管线错误 {e}"));
+            let _ = app.emit("translation-error", e);
+        }
+        Err(_) => {
+            crate::log::line("worker(word-fallback): 管线 PANIC 被捕获（详见上方日志）");
+            let _ = app.emit("translation-error", "框选取词内部错误（已记录日志）");
+        }
+    }
+
+    // 翻译完成后再显示并前置主窗口，让用户直接看到结果。
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if let Err(e) = w.unminimize() {
+            crate::log::line(&format!("worker(word-fallback): 取消最小化失败 {e}"));
+        }
+        if let Err(e) = w.show() {
+            crate::log::line(&format!("worker(word-fallback): 显示主窗口失败 {e}"));
+        }
+        if let Err(e) = w.set_focus() {
+            crate::log::line(&format!("worker(word-fallback): 聚焦主窗口失败 {e}"));
+        }
+    }
+    st2_word_bubble_reset(app);
+    crate::log::line("worker(word-fallback): done");
 }
 
 /// 当前 Unix 毫秒时间戳（用于结果新鲜度判断）。

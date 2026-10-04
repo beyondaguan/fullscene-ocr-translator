@@ -256,6 +256,49 @@ pub fn clear_history() -> Result<(), String> {
     db.clear().map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------------------
+// 生词本（阶段 C2）：划词/收藏按钮共用同一数据层
+// ---------------------------------------------------------------------------
+
+/// 列出最近 N 条生词（`query` 非空时按 term/translation 模糊过滤）。
+#[tauri::command]
+pub fn list_words(
+    state: State<'_, AppState>,
+    limit: usize,
+    query: Option<String>,
+) -> Result<Vec<fs_core::database::WordEntry>, String> {
+    let _ = &state;
+    let db = crate::window::main_window::history_db().map_err(|e| e.to_string())?;
+    db.list_words(limit, query.as_deref()).map_err(|e| e.to_string())
+}
+
+/// 收藏一条生词，返回新条目 id。
+#[tauri::command]
+pub fn add_word(
+    state: State<'_, AppState>,
+    word: fs_core::database::WordEntry,
+) -> Result<i64, String> {
+    let _ = &state;
+    let db = crate::window::main_window::history_db().map_err(|e| e.to_string())?;
+    db.insert_word(&word).map_err(|e| e.to_string())
+}
+
+/// 取消收藏（删除一条生词）。
+#[tauri::command]
+pub fn delete_word(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    let _ = &state;
+    let db = crate::window::main_window::history_db().map_err(|e| e.to_string())?;
+    db.delete_word(id).map_err(|e| e.to_string())
+}
+
+/// 查询某原文是否已收藏（收藏按钮初始态）。
+#[tauri::command]
+pub fn is_word_saved(state: State<'_, AppState>, term: String) -> Result<bool, String> {
+    let _ = &state;
+    let db = crate::window::main_window::history_db().map_err(|e| e.to_string())?;
+    db.is_word_saved(&term).map_err(|e| e.to_string())
+}
+
 #[derive(serde::Serialize)]
 pub struct HistoryItem {
     pub id: i64,

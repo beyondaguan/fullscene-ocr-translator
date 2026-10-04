@@ -46,6 +46,10 @@ fn main() {
             commands::get_history,
             commands::get_result,
             commands::clear_history,
+            commands::list_words,
+            commands::add_word,
+            commands::delete_word,
+            commands::is_word_saved,
         ])
         .setup(move |app| {
             log::line("setup: begin");
