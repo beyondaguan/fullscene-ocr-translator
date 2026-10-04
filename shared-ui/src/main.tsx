@@ -8,6 +8,7 @@ import { Settings, type SettingsData } from './layouts/Settings';
 import { useTheme } from './hooks/useTheme';
 import { createNativeMsgApi, type EngineInfo, type NativeMsgApi, type PipelineSnapshot } from './hooks/useNativeMsg';
 import { StatusDot } from './components/StatusBar';
+import type { SelectOption } from './components/Select';
 import { countChars } from './utils/text';
 import './tokens.css';
 import './global.css';
@@ -560,9 +561,27 @@ function Root() {
        ENGINES.find((e) => e.value === preferredEngineId)?.label ??
        preferredEngineId)
     : '';
+
+  // 引擎下拉选项：**以后端 list_engines 为准**（含 argos 等全部注册引擎），
+  // 不可用的置灰而非隐藏 —— 让用户知道「有这个引擎但缺配置」，
+  // 这是与降级链语义一致的信息（registry 只轮换 available 的引擎）。
+  // 仅当后端返回空（浏览器预览 / 桥未就绪）时才退回静态兜底表。
+  const engineOptions: SelectOption[] =
+    engines.length > 0
+      ? engines.map((e) => ({
+          value: e.id,
+          label: e.available ? e.label : `${e.label}（不可用）`,
+          disabled: !e.available,
+        }))
+      : ENGINES;
+
+  const selectedEngineAvailable = engines.find((e) => e.id === preferredEngineId)?.available;
+
   const engineCell = preferredEngineId ? (
     <span key="engine" title={`降级链：${fallbackChainLabel}`}>
+      <StatusDot tone={selectedEngineAvailable === false ? 'warn' : 'ok'} />
       引擎 · {preferredEngineLabel}
+      {selectedEngineAvailable === false ? '（不可用，将走降级链）' : ''}
       {lastRun && lastRun.engine === preferredEngineId && lastRun.engine_chain_len > 0
         ? ` (第 ${lastRun.engine_position}/${lastRun.engine_chain_len} 环)`
         : ''}
@@ -657,6 +676,7 @@ function Root() {
           srcLang={srcLang}
           dstLang={dstLang}
           engine={engine}
+          engines={engineOptions}
           onLangChange={(which, value) => (which === 'src' ? setSrcLang(value) : setDstLang(value))}
           onSwapLang={doSwap}
           onEngineChange={setEngine}
