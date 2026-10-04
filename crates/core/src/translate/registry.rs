@@ -71,21 +71,18 @@ impl Registry {
         if available.len() < 2 {
             return None;
         }
-        // 新顺序：第 2 个可用引擎提到最前，其余保持原有相对顺序。
-        let mut next: Vec<String> = Vec::with_capacity(order.len());
-        next.push(available[1].clone());
-        for id in order {
-            if *id != available[0] {
-                next.push(id.clone());
-            }
-        }
-        // available[0] 落到可用引擎区末尾（即「第二可用」之后）。
-        let insert_at = next
-            .iter()
-            .position(|id| id == &available[1])
-            .map(|i| i + 1)
-            .unwrap_or(next.len());
-        next.insert(insert_at, available[0].clone());
+        // 新顺序：第 2 个可用引擎提到最前，第 1 个紧随其后，其余保持原有相对顺序。
+        // 被轮换的两个引擎在链中只保留一次：若历史数据里有重复项（如旧的切换
+        // 逻辑不去重导致 local-llm/mymemory 出现两次），filter 一并清除。
+        let next: Vec<String> = std::iter::once(available[1].clone())
+            .chain(std::iter::once(available[0].clone()))
+            .chain(
+                order
+                    .iter()
+                    .filter(|id| *id != &available[0] && *id != &available[1])
+                    .cloned(),
+            )
+            .collect();
         Some((available[1].clone(), next))
     }
 
@@ -390,5 +387,50 @@ mod tests {
             .translate_with_fallback(&["offline".to_string()], "hi", "auto", "zh")
             .unwrap_err();
         assert!(err.to_string().contains("无可用引擎"), "实际 {err}");
+    }
+
+    #[test]
+    fn cycle_primary_moves_to_next_available_without_duplicates() {
+        let mut r = Registry::new();
+        r.register(Box::new(ToggleEngine { id: "a", is_available: true }));
+        r.register(Box::new(ToggleEngine { id: "b", is_available: true }));
+        r.register(Box::new(ToggleEngine { id: "c", is_available: true }));
+        let order = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let (new_primary, next) = r.cycle_primary(&order).unwrap();
+        assert_eq!(new_primary, "b", "新首选应是第 2 个可用引擎");
+        assert_eq!(next, vec!["b".to_string(), "a".to_string(), "c".to_string()], "轮换后不应产生重复项");
+    }
+
+    #[test]
+    fn cycle_primary_dedups_historical_duplicates() {
+        // 回归：旧实现只把 available[0] 挪到 available[1] 之后但不去重，
+        // 多次切换后链内出现 local-llm/mymemory 各两份。修复后必须清理历史重复项。
+        let mut r = Registry::new();
+        r.register(Box::new(ToggleEngine { id: "a", is_available: true }));
+        r.register(Box::new(ToggleEngine { id: "b", is_available: true }));
+        r.register(Box::new(ToggleEngine { id: "c", is_available: true }));
+        let order = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "a".to_string(),
+            "c".to_string(),
+            "b".to_string(),
+        ];
+        let (new_primary, next) = r.cycle_primary(&order).unwrap();
+        assert_eq!(new_primary, "b");
+        assert_eq!(
+            next,
+            vec!["b".to_string(), "a".to_string(), "c".to_string()],
+            "被轮换的两个引擎只保留一次，历史重复项应被清除"
+        );
+    }
+
+    #[test]
+    fn cycle_primary_requires_two_available() {
+        let mut r = Registry::new();
+        r.register(Box::new(ToggleEngine { id: "a", is_available: true }));
+        r.register(Box::new(ToggleEngine { id: "off", is_available: false }));
+        let order = vec!["a".to_string(), "off".to_string()];
+        assert!(r.cycle_primary(&order).is_none(), "可用引擎不足 2 个时不应切换");
     }
 }
