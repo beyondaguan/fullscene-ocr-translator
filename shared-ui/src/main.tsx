@@ -424,10 +424,15 @@ function Root() {
       try {
         await api.saveConfig(cfg);
         setConfig(cfg);
+        setError(undefined);
         // 密钥/降级链变了，引擎可用状态随之变化，刷新列表
         api.listEngines().then(setEngines).catch(() => {});
       } catch (e) {
+        // 必须 rethrow：设置页「应用并保存」依赖 catch 来显示失败原因。
+        // 此前只 setError 不抛，设置页因此永远拿不到失败反馈——用户只看到
+        // 「按了没反应」。setError 保留，让工作区也能看到。
         setError(String(e));
+        throw e;
       }
     },
     [api],
@@ -618,6 +623,7 @@ function Root() {
           fontScale={fontScale}
           onSave={saveConfig}
           onReload={reloadConfig}
+          error={error}
           onTestConnection={testConnection}
           onTestEngine={testEngine}
           onHotkeyCapture={suspendHotkeys}

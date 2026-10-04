@@ -68,6 +68,8 @@ export interface SettingsProps {
   fontScale?: number;
   onSave?: (cfg: SettingsData) => Promise<void> | void;
   onReload?: () => void;
+  /** 设置页错误提示（如保存失败原因）。空值表示无错误。 */
+  error?: string | null;
   onTestConnection?: (endpoint: string, model: string) => Promise<string>;
   /** 热键录入态变化：true 时宿主应挂起全局热键，false 时恢复 */
   onHotkeyCapture?: (listening: boolean) => void;
@@ -111,6 +113,10 @@ const IN_APP_HOTKEYS: [string, string][] = [
 const GLOBAL_HOTKEY_ACTIONS: [string, string, string][] = [
   ['selection_translate', '十字框选截图翻译（主入口，窗口内外通用）', 'Alt+Q'],
   ['fullscreen_translate', '整屏即时翻译（无框选）', 'Ctrl+Alt+O'],
+  // ⚠️ 必须与 Rust `config::DEFAULT_HOTKEYS` 逐项对齐（config.rs:30-32），
+  // 否则该动作在设置页不可见、用户也改不了。此前前端漏了这项，
+  // 导致 `cycle_engine` 只能吃代码默认值、无法配置也无法在 UI 中确认。
+  ['cycle_engine', '切换翻译引擎（首选引擎往后挪一位，需可用引擎 ≥ 2 个）', 'Ctrl+Alt+E'],
 ];
 
 const hairline = '0.5px solid var(--color-hairline)';
@@ -130,6 +136,7 @@ export function Settings({
   fontScale,
   onSave,
   onReload,
+  error,
   onTestConnection,
   onTestEngine,
   onHotkeyCapture,
@@ -138,6 +145,31 @@ export function Settings({
 }: SettingsProps) {
   const [cat, setCat] = useState<Category>('general');
   const [cfg, setCfg] = useState<SettingsData>(initial ?? {});
+  /**
+   * 保存结果反馈。
+   *
+   * 背景：此前「应用并保存」失败时**完全没有提示**——宿主 `saveConfig` 会
+   * `setError(String(e))`，但 `error` prop 只传给了工作区 `Workspace`，
+   * 设置页自身不渲染它，于是用户只看到「按了没反应」。
+   * 这里自行捕获异常，就地显示成功/失败，并把失败原因完整呈现。
+   */
+  const [saveState, setSaveState] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const doSave = async () => {
+    if (!onSave || saving) return;
+    setSaving(true);
+    try {
+      await onSave(cfg);
+      setSaveState({ kind: 'ok', text: '已保存并立即生效（全局热键已热重载，无需重启）' });
+    } catch (e) {
+      setSaveState({ kind: 'err', text: `保存失败：${e instanceof Error ? e.message : String(e)}` });
+    } finally {
+      setSaving(false);
+      // 成功提示 3s 后自动消失；失败提示常驻直到下一次操作。
+      window.setTimeout(() => setSaveState((s) => (s?.kind === 'ok' ? null : s)), 3000);
+    }
+  };
 
   useEffect(() => {
     if (initial) setCfg(initial);
@@ -292,12 +324,29 @@ export function Settings({
           borderTop: hairline,
           display: 'flex',
           gap: 'var(--spacing-sm)',
+          alignItems: 'center',
         }}
       >
-        <Button variant="primary" onClick={() => onSave?.(cfg)}>
-          应用并保存
+        <Button variant="primary" onClick={doSave} disabled={saving}>
+          {saving ? '保存中…' : '应用并保存'}
         </Button>
         <Button onClick={onReload}>重新加载配置</Button>
+        {/* 保存结果 / 宿主错误：此前两者都无呈现，导致失败时「按了没反应」 */}
+        <span
+          role="status"
+          style={{
+            fontSize: 'var(--font-size-xs)',
+            marginLeft: 4,
+            color:
+              saveState?.kind === 'err'
+                ? 'var(--color-danger, #d54941)'
+                : error
+                  ? 'var(--color-danger, #d54941)'
+                  : 'var(--color-text-tertiary)',
+          }}
+        >
+          {saveState?.text ?? error ?? ''}
+        </span>
       </div>
     </div>
   );

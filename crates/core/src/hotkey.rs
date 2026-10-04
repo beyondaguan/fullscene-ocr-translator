@@ -102,7 +102,24 @@ impl HotkeyHandle {
 /// 注册失败仅告警、不阻断主流程（降级为仅响应 Native Messaging）。个别组合键若被占用
 /// 会单独失败并跳过，不影响其余动作。返回 [`HotkeyHandle`]，改热键时先 `stop()` 再重新
 /// `spawn_hotkey_loop`（热重载，无需重启进程）。
+///
+/// ## `on_warn` 的必要性
+///
+/// 原本三处告警都用 `eprintln!`。但 GUI 宿主是 **windows 子系统程序、没有控制台**，
+/// `eprintln!` 的输出谁都看不到——真机表现为「热键按了没反应」，完全无法诊断
+/// （2026-10-04 实测：用户报 `Ctrl+Alt+E` 无效，而 `RegisterHotKey` 失败的唯一线索
+/// 就写在这条被丢弃的 `eprintln!` 里）。
+/// `on_warn` 让调用方（`fs-gui`）把告警转写进 `%APPDATA%/FullSceneOCR/logs/fs-gui.log`。
 pub fn spawn_hotkey_loop(actions: Vec<HotkeyAction>) -> Result<HotkeyHandle> {
+    spawn_hotkey_loop_with_warn(actions, |msg| eprintln!("{msg}"))
+}
+
+/// [`spawn_hotkey_loop`] 的带告警回调版本。`on_warn` 会在注册失败 / 回调 panic /
+/// 线程未就绪时被调用。
+pub fn spawn_hotkey_loop_with_warn(
+    actions: Vec<HotkeyAction>,
+    on_warn: impl Fn(String) + Send + Sync + 'static,
+) -> Result<HotkeyHandle> {
     // 先全部解析，任一非法组合键直接返回 Err（不启动线程）。
     let parsed: Vec<ParsedHotkey> = actions
         .into_iter()
@@ -113,6 +130,12 @@ pub fn spawn_hotkey_loop(actions: Vec<HotkeyAction>) -> Result<HotkeyHandle> {
         .collect::<Result<Vec<_>>>()?;
 
     let (id_tx, id_rx) = mpsc::channel::<u32>();
+    // 告警回调要被线程内两处（注册失败 / 回调 panic）与主线程（线程未就绪）共用，
+    // 故用 Arc 共享——`impl Fn` 不可 clone。
+    let on_warn = std::sync::Arc::new(on_warn);
+    let on_warn_thread = std::sync::Arc::clone(&on_warn);
+    let on_warn_reg = std::sync::Arc::clone(&on_warn);
+    let on_warn_main = std::sync::Arc::clone(&on_warn);
     thread::spawn(move || {
         unsafe {
             // 逐个注册；被占用（0x80070581）等失败仅告警跳过，不阻断其余动作。
@@ -123,7 +146,9 @@ pub fn spawn_hotkey_loop(actions: Vec<HotkeyAction>) -> Result<HotkeyHandle> {
                     HOT_KEY_MODIFIERS(*modifiers),
                     *vk as u32,
                 ) {
-                    eprintln!("warn: 注册全局热键 id={id} 失败（可能被占用）: {e}");
+                    on_warn_reg(format!(
+                        "注册全局热键 id={id} 失败（可能被占用，该组合键不生效）: {e}"
+                    ));
                 }
             }
             // 把线程 ID 回传，供 stop() 投递 WM_QUIT。
@@ -142,7 +167,7 @@ pub fn spawn_hotkey_loop(actions: Vec<HotkeyAction>) -> Result<HotkeyHandle> {
                         let cb = &action.3;
                         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(cb));
                         if r.is_err() {
-                            eprintln!("warn: 热键 id={id} 回调 panic，已捕获，监听线程继续存活");
+                            on_warn_thread(format!("热键 id={id} 回调 panic，已捕获，监听线程继续存活"));
                         }
                     }
                 }
@@ -158,7 +183,7 @@ pub fn spawn_hotkey_loop(actions: Vec<HotkeyAction>) -> Result<HotkeyHandle> {
     // 热键是便利功能，绝不能阻断应用启动。
     let thread_id = id_rx.recv().ok();
     if thread_id.is_none() {
-        eprintln!("warn: 全局热键未生效（可能被其他程序占用），应用继续运行（应用内热键仍可用）");
+        on_warn_main("全局热键未生效（可能被其他程序占用），应用继续运行（应用内热键仍可用）".into());
     }
     Ok(HotkeyHandle { thread_id })
 }

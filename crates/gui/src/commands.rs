@@ -45,13 +45,20 @@ pub fn get_config(state: State<'_, AppState>) -> Result<Config, String> {
 
 #[tauri::command]
 pub fn save_config(app: AppHandle, state: State<'_, AppState>, config: Config) -> Result<(), String> {
+    crate::log::line("save_config: begin");
     state
         .update_config(config)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            crate::log::line(&format!("save_config: update_config 失败 {e}"));
+            e.to_string()
+        })?;
     // 配置（含热键表）已落盘并刷新内存；热重载全局动作热键，无需重启。
-    state
-        .reload_global_hotkeys(&app)
-        .map_err(|e| e.to_string())
+    state.reload_global_hotkeys(&app).map_err(|e| {
+        crate::log::line(&format!("save_config: 热重载失败 {e}"));
+        e.to_string()
+    })?;
+    crate::log::line("save_config: ok");
+    Ok(())
 }
 
 #[tauri::command]

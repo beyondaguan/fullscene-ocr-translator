@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use fs_core::config::{self, Config};
 use fs_core::database::Database;
 use fs_core::error::Result;
-use fs_core::hotkey::{spawn_hotkey_loop, HotkeyAction, HotkeyHandle};
+use fs_core::hotkey::{spawn_hotkey_loop_with_warn, HotkeyAction, HotkeyHandle};
 use fs_core::ocr::{self, OcrEngine};
 use fs_core::translate::Translator;
 use fs_core::types::CaptureTarget;
@@ -92,6 +92,7 @@ impl AppState {
     /// 更新配置并热重载依赖（保存到磁盘 + 重建翻译器 + 重建 OCR 引擎）。
     pub fn update_config(&self, cfg: Config) -> Result<()> {
         config::save(&cfg)?;
+        crate::log::line("config: saved to disk");
         {
             let mut cur = self.config.lock().unwrap();
             *cur = cfg.clone();
@@ -108,6 +109,12 @@ impl AppState {
             let mut r = self.ocr_ready.lock().unwrap();
             *r = ready;
         }
+        // 诊断：保存链路此前完全无日志，失败时用户只看到「按了没反应」。
+        // 尤其 ocr::build_engine 失败会直接让整个保存失败（`?`），必须留痕。
+        crate::log::line(&format!(
+            "config: reloaded (ocr_ready={ready}, hotkeys={:?})",
+            cfg.hotkeys
+        ));
         Ok(())
     }
 
@@ -379,12 +386,16 @@ impl AppState {
             });
             id += 1;
         }
-        match spawn_hotkey_loop(actions) {
+        match spawn_hotkey_loop_with_warn(actions, |msg| crate::log::line(&format!("hotkey: {msg}"))) {
             Ok(h) => {
                 *self.hotkey_handle.lock().unwrap() = Some(h);
+                crate::log::line("hotkeys: registered");
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                crate::log::line(&format!("hotkeys: spawn failed: {e}"));
+                Err(e)
+            }
         }
     }
 
