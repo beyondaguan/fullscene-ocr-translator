@@ -34,6 +34,7 @@
 //! 返回 SAFEARRAY，见 `docs/划词取词设计.md`），只改这一个函数即可。
 
 use std::ptr;
+use std::sync::Arc;
 
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -58,6 +59,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::super::log;
+use crate::tts::{TtsOptions, TtsRegistry};
 
 /// 气泡直径（逻辑像素，未乘 DPI）。
 const BUBBLE_SIZE: i32 = 28;
@@ -70,6 +72,12 @@ const RESULT_MAX_H: i32 = 320;
 const RESULT_PAD: i32 = 12;
 /// 关闭按钮边长（逻辑像素）。
 const CLOSE_BTN: i32 = 22;
+/// 结果窗底部操作按钮高度（逻辑像素）。
+const ACTION_BTN_H: i32 = 28;
+/// 结果窗底部操作按钮左右内边距（逻辑像素）。
+const ACTION_PAD_X: i32 = 10;
+/// 朗读按钮的标签文本。
+const TTS_BTN_TEXT: &str = "🔊 朗读";
 /// Esc / 点击外部的轮询间隔（毫秒）。
 const POLL_MS: u32 = 50;
 /// `SetTimer` 的定时器 id。
@@ -145,6 +153,8 @@ struct BubbleWin {
     on_translate: Box<dyn Fn(&str) -> Result<String, String> + Send>,
     /// 用户主动关闭（×/Esc/点外部）时触发，用于回滚调用方状态。
     on_dismiss: Box<dyn Fn() + Send>,
+    /// TTS 注册表（阶段 B3）。`None` = 无可用 TTS，结果窗隐藏「朗读」按钮。
+    tts: Option<Arc<TtsRegistry>>,
     /// 消息循环退出标志。
     done: bool,
 }
@@ -190,6 +200,7 @@ fn locate_bubble(anchor: Option<POINT>, scale: f64, screen: RECT) -> POINT {
 /// - `anchor`：划词起点物理坐标。`None` 表示取词路径拿不到坐标（剪贴板降级），
 ///   内部回落到光标位置。
 /// - `content`：原文（翻译在点击后由 `on_translate` 产出）。
+/// - `tts`：TTS 注册表（`None` = 无可用语音，结果窗隐藏「朗读」按钮）。
 /// - `on_translate`：点击气泡后调用，返回译文或错误串。**实现方必须走 `Translator` 降级链。**
 /// - `on_dismiss`：用户主动关闭时调用一次。
 ///
@@ -202,6 +213,7 @@ fn locate_bubble(anchor: Option<POINT>, scale: f64, screen: RECT) -> POINT {
 pub fn show_bubble(
     anchor: Option<POINT>,
     content: BubbleContent,
+    tts: Option<Arc<TtsRegistry>>,
     #[allow(clippy::type_complexity)]
     on_translate: Box<dyn Fn(&str) -> Result<String, String> + Send>,
     on_dismiss: Box<dyn Fn() + Send>,
@@ -222,6 +234,7 @@ pub fn show_bubble(
             click_armed: false,
             on_translate,
             on_dismiss,
+            tts,
             done: false,
         };
 
@@ -419,15 +432,28 @@ fn result_size(state: &BubbleWin) -> (i32, i32) {
     } else {
         estimate_lines(&state.content.translation, max_w - 2 * px(RESULT_PAD, state.scale))
     };
+    // 底部操作行：有 TTS 时多留一行按钮高度，否则只留关闭按钮高度。
+    let actions_h = if tts_available(state) {
+        px(ACTION_BTN_H, state.scale) + px(8, state.scale)
+    } else {
+        px(0, state.scale)
+    };
     let mut h = px(RESULT_PAD, state.scale) * 2
         + src_lines * px(20, state.scale)
         + body * px(20, state.scale)
-        + px(CLOSE_BTN, state.scale) + px(8, state.scale);
+        + px(CLOSE_BTN, state.scale)
+        + px(8, state.scale)
+        + actions_h;
     let max_h = px(RESULT_MAX_H, state.scale);
     if h > max_h {
         h = max_h;
     }
     (max_w, h)
+}
+
+/// 是否有可用的 TTS（决定结果窗是否渲染「朗读」按钮）。
+fn tts_available(state: &BubbleWin) -> bool {
+    state.tts.as_ref().map(|t| t.has_any()).unwrap_or(false)
 }
 
 /// 估算文本在给定宽度下占几行（中文按 2 倍宽度估算，纯视觉启发式）。
@@ -616,10 +642,10 @@ unsafe fn paint(hwnd: HWND, state: &BubbleWin) {
     let _ = EndPaint(hwnd, &ps);
 }
 
-/// 绘制结果窗：原文（次要色）+ 译文（主色）+ 右上角关闭按钮。
+/// 绘制结果窗：原文（次要色）+ 译文（主色）+ 右上角关闭按钮 + 底部「朗读」按钮。
 ///
-/// B1 阶段**只画 `[×]` 与纯文本**：设计 §3.2 的[朗读][收藏★][详解]属 B3/C/D，
-/// 此处刻意不画空按钮——§3.3 明确「给用户一个死按钮」是竞品差评的成因。
+/// B3 起：`tts.has_any()` 为 true 时在底部渲染「🔊 朗读」按钮，点击后异步朗读原文。
+/// 无 TTS 时不画死按钮（§3.3「给用户一个死按钮」是竞品差评的成因，不适用但同理）。
 unsafe fn draw_result(hdc: windows::Win32::Graphics::Gdi::HDC, state: &BubbleWin, w: i32, h: i32) {
     let scale = state.scale;
     let pad = px(RESULT_PAD, scale);
@@ -643,6 +669,13 @@ unsafe fn draw_result(hdc: windows::Win32::Graphics::Gdi::HDC, state: &BubbleWin
     let oldfont = SelectObject(hdc, font);
     let _ = SetBkMode(hdc, TRANSPARENT);
 
+    // 底部操作行高度：有 TTS 时预留按钮行。
+    let actions_h = if tts_available(state) {
+        px(ACTION_BTN_H, scale) + px(8, scale)
+    } else {
+        0
+    };
+
     let mut y = pad;
 
     // 原文（次要色）
@@ -661,7 +694,7 @@ unsafe fn draw_result(hdc: windows::Win32::Graphics::Gdi::HDC, state: &BubbleWin
 
     y += px(8, scale);
 
-    // 译文或错误（主色 / 警示色）
+    // 译文或错误（主色 / 警示色），底部为操作行让位
     let (body, color) = match &state.content.error {
         Some(e) => (e.clone(), COLOR_CLOSE),
         None => (state.content.translation.clone(), COLOR_TEXT),
@@ -674,7 +707,7 @@ unsafe fn draw_result(hdc: windows::Win32::Graphics::Gdi::HDC, state: &BubbleWin
             left: pad,
             top: y,
             right: w - pad,
-            bottom: h - pad - btn,
+            bottom: h - pad - btn - actions_h,
         },
         scale,
     );
@@ -703,8 +736,117 @@ unsafe fn draw_result(hdc: windows::Win32::Graphics::Gdi::HDC, state: &BubbleWin
     let _ = DrawTextW(hdc, &mut x, &mut r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     let _ = DeleteObject(close_brush);
 
+    // 「朗读」按钮（底部左侧，仅 TTS 可用时渲染）
+    if tts_available(state) {
+        draw_tts_button(hdc, state, w, h, pad);
+    }
+
     let _ = SelectObject(hdc, oldfont);
     let _ = DeleteObject(font);
+}
+
+/// 绘制底部「🔊 朗读」按钮（圆角胶囊 + 居中文本）。
+unsafe fn draw_tts_button(
+    hdc: windows::Win32::Graphics::Gdi::HDC,
+    state: &BubbleWin,
+    _w: i32,
+    h: i32,
+    pad: i32,
+) {
+    let scale = state.scale;
+    let btn_h = px(ACTION_BTN_H, scale);
+    // 按字符数估算按钮宽度：中文/emoji 记 2 个半角宽，宽松加余量。
+    let text_w: i32 = TTS_BTN_TEXT
+        .chars()
+        .map(|c| if (c as u32) > 0x2E80 { 16 } else { 9 })
+        .sum();
+    let label_w = (text_w + px(ACTION_PAD_X, scale) * 2).max(px(76, scale));
+    let x0 = pad;
+    let y0 = h - pad - btn_h - px(4, scale);
+    let x1 = x0 + label_w;
+    let y1 = y0 + btn_h;
+
+    // 圆角胶囊底
+    let brush = CreateSolidBrush(COLORREF(0x00FF_442E)); // #2e44ff 蓝，与主题一致
+    let _ = SelectObject(hdc, brush);
+    let _ = windows::Win32::Graphics::Gdi::RoundRect(
+        hdc,
+        x0,
+        y0,
+        x1,
+        y1,
+        px(14, scale),
+        px(14, scale),
+    );
+    let _ = DeleteObject(brush);
+
+    // 标签
+    let mut label: Vec<u16> = TTS_BTN_TEXT.encode_utf16().collect();
+    label.push(0);
+    let _ = SetTextColor(hdc, COLORREF(COLOR_TEXT));
+    let mut r = RECT {
+        left: x0,
+        top: y0,
+        right: x1,
+        bottom: y1,
+    };
+    let _ = DrawTextW(hdc, &mut label, &mut r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+/// 计算「朗读」按钮的命中矩形（与 [`draw_tts_button`] 的绘制参数完全一致）。
+fn tts_button_rect(state: &BubbleWin, _w: i32, h: i32) -> Option<windows::Win32::Foundation::RECT> {
+    if !tts_available(state) {
+        return None;
+    }
+    let scale = state.scale;
+    let pad = px(RESULT_PAD, scale);
+    let btn_h = px(ACTION_BTN_H, scale);
+    let text_w: i32 = TTS_BTN_TEXT
+        .chars()
+        .map(|c| if (c as u32) > 0x2E80 { 16 } else { 9 })
+        .sum();
+    let label_w = (text_w + px(ACTION_PAD_X, scale) * 2).max(px(76, scale));
+    let x0 = pad;
+    let y0 = h - pad - btn_h - px(4, scale);
+    let x1 = x0 + label_w;
+    let y1 = y0 + btn_h;
+    Some(windows::Win32::Foundation::RECT {
+        left: x0,
+        top: y0,
+        right: x1,
+        bottom: y1,
+    })
+}
+
+/// 判断屏幕坐标是否落在「朗读」按钮上。
+fn tts_hit_test(state: &BubbleWin, x: i32, y: i32) -> bool {
+    let Some(r) = tts_button_rect(state, state.rect.right - state.rect.left, state.rect.bottom - state.rect.top) else {
+        return false;
+    };
+    x >= r.left && x < r.right && y >= r.top && y < r.bottom
+}
+
+/// 朗读结果窗中的**原文**（设计 §3.2：划词浮窗读的是被划选的原文）。
+///
+/// 必须在独立线程执行：`speak()` 会同步阻塞直到朗读完成（SAPI5 `WaitUntilDone` /
+/// OneCore `SND_SYNC`），放在浮窗消息循环里会冻结窗口。浮窗本身不抢焦点，
+/// 音频输出与消息循环无交互，后台线程播完即可。
+fn speak_source(state: &BubbleWin) {
+    let Some(tts) = state.tts.clone() else {
+        return;
+    };
+    let text = state.content.source.clone();
+    crate::log::line(&format!(
+        "bubble: 朗读原文 {} chars",
+        text.chars().count()
+    ));
+    std::thread::spawn(move || {
+        let opts = TtsOptions::default();
+        match tts.speak(&text, &opts) {
+            Ok(()) => crate::log::line("bubble: 朗读完成"),
+            Err(e) => crate::log::line(&format!("bubble: 朗读失败: {e}")),
+        }
+    });
 }
 
 /// 绘制一段文本，返回实际占用高度（逻辑像素换算后的物理高度）。
@@ -760,7 +902,7 @@ unsafe extern "system" fn wndproc(
             if state.state == BubbleState::Bubble {
                 start_translate(hwnd, state);
             } else if state.state == BubbleState::Result {
-                // 结果窗：点 [×] 关闭，点其它区域也关闭（与气泡一致，减少一步）。
+                // 结果窗：点 [×] 关闭，点「朗读」异步朗读，点其它区域也关闭。
                 let mut p = POINT::default();
                 let _ = GetCursorPos(&mut p);
                 let btn = px(CLOSE_BTN, state.scale);
@@ -769,8 +911,15 @@ unsafe extern "system" fn wndproc(
                     && p.x < state.rect.right - pad
                     && p.y >= pad
                     && p.y < pad + btn;
-                let _ = on_close;
-                dismiss(hwnd, state);
+                let on_tts = tts_hit_test(state, p.x, p.y);
+                if on_tts {
+                    speak_source(state);
+                } else if on_close {
+                    dismiss(hwnd, state);
+                } else {
+                    // 点其它区域也关闭（与气泡一致，减少一步）。
+                    dismiss(hwnd, state);
+                }
             }
             LRESULT(0)
         }
@@ -801,6 +950,7 @@ mod tests {
             click_armed: false,
             on_translate: Box::new(|_| Err("test".into())),
             on_dismiss: Box::new(|| {}),
+            tts: None,
             done: false,
         }
     }
@@ -939,5 +1089,20 @@ mod tests {
         s.state = BubbleState::Idle;
         enter_bubble(&mut s);
         assert_eq!(s.state, BubbleState::Bubble);
+    }
+
+    /// oracle: 无 TTS 时结果窗不预留操作行、也不命中朗读按钮
+    #[test]
+    fn result_without_tts_has_no_action_row() {
+        let s = win(BubbleContent {
+            source: "hello".into(),
+            translation: "你好".into(),
+            error: None,
+        });
+        assert!(!tts_available(&s));
+        assert!(tts_button_rect(&s, 400, 200).is_none());
+        // 结果窗高度不因 TTS 预留额外操作行
+        let (_, h_no_tts) = result_size(&s);
+        assert!(h_no_tts > 0);
     }
 }

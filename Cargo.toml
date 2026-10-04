@@ -77,4 +77,15 @@ features = [
     "Win32_System_Memory",
     # CF_UNICODETEXT 常量定义在 System::Ole 而非 DataExchange（易踩坑）
     "Win32_System_Ole",
+    # ---- 划词 TTS（阶段 B3，docs/划词取词设计.md §5）----
+    # SAPI5：ISpVoice / ISpObjectToken / SpVoice 共类（本机实测可用，当前实际生效通道）
+    "Win32_Media_Speech",
+    # PlaySoundW：OneCore 合成出的 WAV 内存播放（SND_MEMORY）
+    "Win32_Media_Audio",
+    # OneCore（Windows.Media.SpeechSynthesis）：需要语音 FoD，本机无 → 探测不到音则不上线
+    "Media_SpeechSynthesis",
+    # OneCore AllVoices() 返回 IVectorView<VoiceInformation> 的遍历
+    "Foundation_Collections",
+    # OneCore 合成流读取（IBuffer / DataReader）
+    "Storage_Streams",
 ]

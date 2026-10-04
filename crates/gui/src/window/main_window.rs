@@ -419,7 +419,11 @@ impl AppState {
                             ));
                             let selected = sel.text.clone();
 
-                            // ② 显示小气泡。**必须**在 worker 线程里跑：
+                            // ② 构造 TTS 注册表（B3）：探测 OneCore/SAPI5。
+                            //    无可用语音时 has_any()=false，结果窗自动隐藏「朗读」按钮。
+                            let tts = std::sync::Arc::new(crate::tts::TtsRegistry::new());
+
+                            // ③ 显示小气泡。**必须**在 worker 线程里跑：
                             //    show_bubble 内部创建窗口并跑自己的消息循环，
                             //    放消息泵线程会卡死所有热键。
                             //    锚点用 None —— 取词接口（阶段 A）不返回选区坐标，
@@ -435,19 +439,52 @@ impl AppState {
                             crate::window::word_bubble::show_bubble(
                                 None,
                                 content,
-                                // 翻译回调：**走 Translator 降级链**（不绕开）。
+                                Some(tts),
+                                // 翻译回调：**走 Translator 降级链**（不绕开），
+                                // 成功后双写 history + wordbook（阶段 C2）。
                                 Box::new(move |text: &str| {
                                     let st = appc3_translate.state::<AppState>();
-                                    let tr = st.translator.lock().unwrap();
-                                    match tr.translate(text, "auto", "zh") {
-                                        Ok(t) => Ok(t),
-                                        Err(e) => {
+                                    let outcome = {
+                                        let tr = st.translator.lock().unwrap();
+                                        match tr.translate_detailed(text, "auto", "zh") {
+                                            Ok(o) => o,
+                                            Err(e) => {
+                                                crate::log::line(&format!(
+                                                    "hotkey(word): 降级链翻译失败 {e}"
+                                                ));
+                                                return Err(format!("翻译失败: {e}"));
+                                            }
+                                        }
+                                    };
+                                    // 双写：history（进入历史抽屉）+ wordbook（生词本）。
+                                    // 写库失败只记日志，绝不影响翻译主流程。
+                                    if let Ok(db) = history_db() {
+                                        if let Err(err) =
+                                            db.insert_history(text, &outcome.text, &outcome.engine)
+                                        {
                                             crate::log::line(&format!(
-                                                "hotkey(word): 降级链翻译失败 {e}"
+                                                "hotkey(word): 历史写入失败（已忽略）: {err}"
                                             ));
-                                            Err(format!("翻译失败: {e}"))
+                                        }
+                                        let entry = fs_core::database::WordEntry {
+                                            id: 0,
+                                            term: text.to_string(),
+                                            translation: outcome.text.clone(),
+                                            context: None,
+                                            context_translation: None,
+                                            engine: outcome.engine.clone(),
+                                            src_lang: "auto".into(),
+                                            dst_lang: "zh".into(),
+                                            source_app: None,
+                                            created_at: String::new(),
+                                        };
+                                        if let Err(err) = db.insert_word(&entry) {
+                                            crate::log::line(&format!(
+                                                "hotkey(word): 生词本写入失败（已忽略）: {err}"
+                                            ));
                                         }
                                     }
+                                    Ok(outcome.text)
                                 }),
                                 Box::new(move || {
                                     st2_word_bubble_reset(&appc3_dismiss);

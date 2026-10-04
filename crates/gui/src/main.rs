@@ -14,6 +14,7 @@
 mod commands;
 mod log;
 mod selftest;
+mod tts;
 mod window;
 
 use tauri::{Builder, Manager};
