@@ -31,6 +31,8 @@ export interface SettingsData {
   translate?: TranslateSettings;
   /** Argos 离线翻译语言包根目录（含 {from}_{to}/{version}/model/ + sentencepiece.model）。留空使用默认 %APPDATA%/FullSceneOCR/argos/models */
   argos_models_dir?: string | null;
+  /** 划词「详解」开关：开启后主画布译文区显示「详解」按钮（需 SiliconFlow/OpenAI 密钥才渲染） */
+  wordbook_detail_enabled?: boolean | null;
 }
 
 export interface TranslateSettings {
@@ -235,6 +237,7 @@ export function Settings({
             llmEndpoint={cfg.llm_endpoint ?? ''}
             llmModel={cfg.llm_model ?? ''}
             argosModelsDir={argosModelsDir ?? cfg.argos_models_dir ?? ''}
+            wordbookDetailEnabled={Boolean(cfg.wordbook_detail_enabled)}
             onChange={(patch) => set({ translate: { ...(cfg.translate ?? {}), ...patch } })}
             onLlmChange={(patch) => set(patch)}
             onArgosModelsDirChange={onArgosModelsDirChange ?? ((v) => set({ argos_models_dir: v }))}
@@ -482,6 +485,8 @@ interface TranslatePaneProps {
   llmEndpoint: string;
   llmModel: string;
   argosModelsDir: string;
+  /** 划词「详解」开关状态（顶层配置字段） */
+  wordbookDetailEnabled?: boolean;
   onChange: (patch: Partial<TranslateSettings>) => void;
   onLlmChange: (patch: Partial<SettingsData>) => void;
   onArgosModelsDirChange: (dir: string | null) => void;
@@ -686,6 +691,7 @@ function TranslatePane({
   llmEndpoint,
   llmModel,
   argosModelsDir,
+  wordbookDetailEnabled,
   onChange,
   onLlmChange,
   onArgosModelsDirChange,
@@ -910,6 +916,17 @@ function TranslatePane({
         llmEndpoint={llmEndpoint}
         llmModel={llmModel}
         onTestConnection={onTestConnection}
+      />
+
+      <div style={sectionTitle}>划词详解</div>
+      <div style={sectionHint}>
+        开启后，主画布译文区显示「详解」按钮，点击生成例句 / 语法 / 用法（复用 AI 助手）。
+        仅当配置了 SiliconFlow / OpenAI 密钥时按钮才渲染；无密钥时静默隐藏。
+      </div>
+      <Switch
+        checked={Boolean(wordbookDetailEnabled)}
+        onChange={(v) => onLlmChange({ wordbook_detail_enabled: v })}
+        label={wordbookDetailEnabled ? '已开启' : '已关闭（默认）'}
       />
 
       <div style={sectionTitle}>Argos 离线翻译</div>
