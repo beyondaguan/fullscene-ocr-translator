@@ -37,11 +37,11 @@ async function init(): Promise<void> {
   // 右键菜单：选中文本后右键可直接翻译
   setupContextMenus();
 
-  // Native Messaging 连接（软件主体未安装时静默跳过；捕获翻译走运行时 sendMessage 自动重连）
+  // Native Messaging 连接（主程序未安装时静默跳过；捕获翻译走运行时 sendMessage 自动重连）
   try {
     connect();
   } catch {
-    // 软件主体未连接
+    // 主程序未连接
   }
 }
 
@@ -205,13 +205,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'open-ai-chat') {
-    // AI 对话在软件主体实现（Alt+3）。此处通过 NM 通知软件主体打开 AI 对话页。
+    // AI 对话在主程序实现（Alt+3）。此处通过 NM 通知主程序打开 AI 对话页。
     void (async () => {
       try {
         await captureTranslate({ mode: 'Primary' }, 'zh'); // 保活探测（可替换为专用指令）
         sendResponse({ ok: true });
       } catch {
-        sendResponse({ ok: false, error: '软件主体未运行' });
+        sendResponse({ ok: false, error: '主程序未运行' });
       }
     })();
     return true;

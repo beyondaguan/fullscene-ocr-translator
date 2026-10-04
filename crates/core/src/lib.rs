@@ -1,7 +1,7 @@
 //! `fs-core`：核心业务库。
 //!
-//! 承载与 UI 无关的全部能力，供 `crates/gui`（软件主体）与 `crates/host`
-//! （Native Messaging 宿主）共同依赖，避免双份实现：
+//! 承载与 UI 无关的全部能力，供 `crates/gui`（主程序）与 `crates/host`（NM 桥）
+//! 共同依赖，避免双份实现：
 //!
 //! - [`config`] 配置加载 / 保存
 //! - [`ocr`] / [`ocr_models`] PP-OCRv6 推理调度与三档模型管理

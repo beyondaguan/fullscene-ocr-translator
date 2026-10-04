@@ -113,7 +113,7 @@ pub fn to_rgb_image(image: &RawImage) -> Result<RgbImage> {
 /// - 模型就绪（`models/ppocrv6` 或用户配置目录）→ 返回真实 PP-OCRv6；
 /// - 模型缺失 / 初始化失败 → 返回 [`PlaceholderOcr`]（占位，不报错）。
 ///
-/// 供 `crates/gui`（常驻软件主体）与 `crates/host`（一次性 NM 宿主）共用，
+/// 供 `crates/gui`（主程序，常驻）与 `crates/host`（NM 桥，一次性进程）共用，
 /// 避免各自复制「模型缺失降级」逻辑。
 pub fn build_engine(dir: Option<&str>) -> Result<Box<dyn OcrEngine>> {
     let models = crate::ocr_models::load_models(dir)?;

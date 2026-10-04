@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "全场景OCR翻译",
   "version": "1.9.0",
-  "description": "与软件主体配合使用的浏览器端翻译扩展：全文翻译 / 划词翻译 / 侧栏翻译",
+  "description": "与主程序配合使用的浏览器端翻译扩展：全文翻译 / 划词翻译 / 侧栏翻译",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",

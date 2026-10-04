@@ -105,7 +105,7 @@ impl HotkeyHandle {
 ///
 /// ## `on_warn` 的必要性
 ///
-/// 原本三处告警都用 `eprintln!`。但 GUI 宿主是 **windows 子系统程序、没有控制台**，
+/// 原本三处告警都用 `eprintln!`。但主程序是 **windows 子系统程序、没有控制台**，
 /// `eprintln!` 的输出谁都看不到——真机表现为「热键按了没反应」，完全无法诊断
 /// （2026-10-04 实测：用户报 `Ctrl+Alt+E` 无效，而 `RegisterHotKey` 失败的唯一线索
 /// 就写在这条被丢弃的 `eprintln!` 里）。

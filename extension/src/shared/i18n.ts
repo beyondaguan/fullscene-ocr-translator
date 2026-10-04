@@ -26,7 +26,7 @@ const zhCN: Dict = {
   'status.translating': '翻译中...',
   'status.error': '错误',
   'status.noText': '未识别到文字',
-  'status.hostNotFound': '未检测到软件主体，请先安装并启动',
+  'status.hostNotFound': '未检测到主程序，请先安装并启动',
   'mode.bilingual': '双语对照',
   'mode.translationOnly': '仅译文',
   'mode.tooltip': 'Tooltip',

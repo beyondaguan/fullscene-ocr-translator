@@ -45,9 +45,9 @@ pub fn dispatch(
             }
         }
         NmRequest::SelectCapture => {
-            // 框选遮罩由软件主体实现；宿主侧暂返回明确错误，避免静默失败。
+            // 框选遮罩由主程序（fs-gui）实现；NM 桥侧暂返回明确错误，避免静默失败。
             NmResponse::Error {
-                message: "SelectCapture 需软件主体主窗体运行（crates/gui）".into(),
+                message: "SelectCapture 需主程序主窗体运行（fs-gui）".into(),
             }
         }
         NmRequest::Ocr { image_id } => {
@@ -117,7 +117,7 @@ mod tests {
         let mut engine = None;
         let resp = dispatch(&NmRequest::SelectCapture, &t, &db, &mut engine);
         match resp {
-            NmResponse::Error { message } => assert!(message.contains("软件主体")),
+            NmResponse::Error { message } => assert!(message.contains("主程序")),
             other => panic!("期望 Error，实际 {other:?}"),
         }
     }

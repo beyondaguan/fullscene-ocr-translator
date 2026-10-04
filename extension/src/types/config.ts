@@ -1,5 +1,5 @@
 /**
- * AppConfig 配置接口与子类型。OCR 由软件主体（Rust host）承担，扩展端不再维护 OcrConfig。
+ * AppConfig 配置接口与子类型。OCR 由主程序（Rust fs-gui）承担，扩展端不再维护 OcrConfig。
  */
 
 /** 翻译配置 */

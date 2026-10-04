@@ -1,7 +1,8 @@
-//! `fs-host`：Native Messaging 宿主。
+//! `fs-host`：**NM 桥**（Native Messaging 管道，扩展 ↔ 主程序）。
+//! 注意：本 crate 是**通道**，不是「主程序」——主程序是 `crates/gui`（fs-gui）。
 //!
 //! 浏览器扩展经标准输入输出与该二进制通信（4 字节小端长度前缀 + UTF-8 JSON）。
-//! 宿主名：`com.fullscene.ocr_translator`（见 PRODUCTION.md §4）。
+//! NM 宿主名：`com.fullscene.ocr_translator`（**已写入注册表，禁止更改**，见 PRODUCTION.md §4）。
 //! 本二进制在 Windows 上无控制台窗口（`windows_subsystem = "windows"`），
 //! 生命周期由 stdin 管道驱动：Chrome 拉起 → 收到请求 → 分发 → stdin EOF 退出。
 
@@ -36,8 +37,8 @@ fn main() {
 fn run() -> Result<()> {
     let cfg = config::load()?;
     let translator = Translator::from_config(&cfg);
-    // 宿主为一次性进程：OCR 引擎懒加载，仅在收到 Ocr 请求时构建。
-    // 常驻模型加载由软件主体（crates/gui）负责，宿主不加载 30MB 模型。
+    // NM 桥为一次性进程：OCR 引擎懒加载，仅在收到 Ocr 请求时构建。
+    // 常驻模型加载由主程序（fs-gui）负责，NM 桥不加载 30MB 模型。
     let db = Database::open_in_memory()?;
 
     let mut engine: Option<Box<dyn OcrEngine>> = None;

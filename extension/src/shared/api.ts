@@ -39,7 +39,7 @@ export async function apiTranslate(req: TranslateRequest): Promise<TranslationRe
   return { text: resp.translation, engine: resp.engine };
 }
 
-/** 截图翻译（需软件主体运行） */
+/** 截图翻译（需主程序运行） */
 export async function apiCaptureTranslate(req: CaptureTranslateRequest = {}): Promise<{ ocrText: string; translation: string }> {
   const resp = (await chrome.runtime.sendMessage({ type: 'capture-translate', ...req })) as
     | { ok: true; ocrText: string; translation: string }
@@ -49,7 +49,7 @@ export async function apiCaptureTranslate(req: CaptureTranslateRequest = {}): Pr
   return { ocrText: resp.ocrText, translation: resp.translation };
 }
 
-/** 框选翻译（需软件主体运行） */
+/** 框选翻译（需主程序运行） */
 export async function apiSelectCaptureTranslate(dst = 'zh'): Promise<{ ocrText: string; translation: string }> {
   const resp = (await chrome.runtime.sendMessage({ type: 'select-capture-translate', dst })) as
     | { ok: true; ocrText: string; translation: string }
@@ -64,7 +64,7 @@ export async function apiUpdateEngineConfig(): Promise<void> {
   await chrome.runtime.sendMessage({ type: 'update-engine-config' }).catch(() => undefined);
 }
 
-/** 打开软件主体 AI 对话页（通过 background 转发，可扩展为 NM 指令） */
+/** 打开主程序 AI 对话页（通过 background 转发，可扩展为 NM 指令） */
 export async function apiOpenAiChat(): Promise<void> {
   await chrome.runtime.sendMessage({ type: 'open-ai-chat' }).catch(() => undefined);
 }

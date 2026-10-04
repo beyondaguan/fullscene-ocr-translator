@@ -38,6 +38,6 @@
     ],
     "category": "Productivity",
     "shortDescription": "全场景 OCR 翻译工具",
-    "longDescription": "软件主体（Rust）与浏览器扩展双端平级，支持截图OCR、划词翻译、全文翻译、AI对话"
+    "longDescription": "主程序（Rust）与浏览器扩展双端平级，支持截图OCR、划词翻译、全文翻译、AI对话"
   }
 }

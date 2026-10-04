@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 全量构建：shared-ui → 浏览器扩展 → 软件主体
+# 全量构建：shared-ui → 浏览器扩展 → 主程序
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,10 +21,10 @@ else
   echo "⚠️  未找到 python，跳过 onnxruntime.dll 检查；运行前请手动执行 scripts/fetch_onnxruntime.py"
 fi
 
-echo "==> 构建软件主体..."
+echo "==> 构建主程序..."
 pnpm --filter gui build
 
 echo "✅ 全量构建完成"
 echo "产物位置："
-echo "  软件主体：crates/gui/target/release/bundle/"
+echo "  主程序：crates/gui/target/release/bundle/"
 echo "  浏览器扩展：extension/dist/"

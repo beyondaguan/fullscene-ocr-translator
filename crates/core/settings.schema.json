@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "FullSceneOCR Config",
-  "description": "软件主体配置单一真源；属性集必须与 fs_core::config::Config 字段完全一致（由 settings_schema_matches_config_fields 测试守护）",
+  "description": "主程序配置单一真源；属性集必须与 fs_core::config::Config 字段完全一致（由 settings_schema_matches_config_fields 测试守护）",
   "type": "object",
   "additionalProperties": false,
   "properties": {

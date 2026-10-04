@@ -2,7 +2,7 @@
 /**
  * unregister_nm_host.mjs
  *
- * 生成卸载 全场景OCR翻译 NM 宿主注册的 .reg 文件。
+ * 生成卸载 全场景OCR翻译 NM 桥注册的 .reg 文件。
  * 产出 %LOCALAPPDATA%\FullSceneOCR\uninstall_nm_host.reg
  *
  * 用法： node scripts/unregister_nm_host.mjs

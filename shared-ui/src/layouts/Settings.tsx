@@ -56,13 +56,13 @@ export interface SettingsProps {
   /** 已注册引擎及可用状态（来自 Rust `list_engines`） */
   engines?: EngineInfo[];
   onThemeChange?: (theme: 'light' | 'dark') => void;
-  /** 强调色变更（即时生效，宿主同步写回 Rust 配置） */
+  /** 强调色变更（即时生效，主程序同步写回 Rust 配置） */
   onAccentChange?: (id: string) => void;
-  /** 字体族变更（即时生效，宿主同步写回 Rust 配置） */
+  /** 字体族变更（即时生效，主程序同步写回 Rust 配置） */
   onFontChange?: (id: string) => void;
   /** 界面字号缩放变更（80-160） */
   onFontScaleChange?: (scale: number) => void;
-  /** 宿主持有的当前值，用于渲染选中态 */
+  /** 主程序持有的当前值，用于渲染选中态 */
   accentId?: string;
   fontId?: string;
   fontScale?: number;
@@ -71,7 +71,7 @@ export interface SettingsProps {
   /** 设置页错误提示（如保存失败原因）。空值表示无错误。 */
   error?: string | null;
   onTestConnection?: (endpoint: string, model: string) => Promise<string>;
-  /** 热键录入态变化：true 时宿主应挂起全局热键，false 时恢复 */
+  /** 热键录入态变化：true 时主程序应挂起全局热键，false 时恢复 */
   onHotkeyCapture?: (listening: boolean) => void;
   /** 指定引擎试译（设置页「测试」按钮），返回译文或抛错 */
   onTestEngine?: (id: string) => Promise<string>;
@@ -148,7 +148,7 @@ export function Settings({
   /**
    * 保存结果反馈。
    *
-   * 背景：此前「应用并保存」失败时**完全没有提示**——宿主 `saveConfig` 会
+   * 背景：此前「应用并保存」失败时**完全没有提示**——主程序 `saveConfig` 会
    * `setError(String(e))`，但 `error` prop 只传给了工作区 `Workspace`，
    * 设置页自身不渲染它，于是用户只看到「按了没反应」。
    * 这里自行捕获异常，就地显示成功/失败，并把失败原因完整呈现。
@@ -331,7 +331,7 @@ export function Settings({
           {saving ? '保存中…' : '应用并保存'}
         </Button>
         <Button onClick={onReload}>重新加载配置</Button>
-        {/* 保存结果 / 宿主错误：此前两者都无呈现，导致失败时「按了没反应」 */}
+        {/* 保存结果 / 主程序错误：此前两者都无呈现，导致失败时「按了没反应」 */}
         <span
           role="status"
           style={{
@@ -360,7 +360,7 @@ interface HotkeyRecorderProps {
   defaultValue: string;
   value: string | null;
   onChange: (v: string | null) => void;
-  /** 进入/退出录入态时通知宿主：宿主需挂起/恢复全局热键，否则按键会被抢走 */
+  /** 进入/退出录入态时通知主程序：主程序需挂起/恢复全局热键，否则按键会被抢走 */
   onCaptureChange?: (listening: boolean) => void;
 }
 

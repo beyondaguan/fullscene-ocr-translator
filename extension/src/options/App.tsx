@@ -132,7 +132,7 @@ export function App() {
           <span className="fs-mark">译</span>
           <div>
             <div className="fs-title">全场景 OCR 翻译 · 设置</div>
-            <div className="fs-sub">与软件主体联动的浏览器端翻译扩展</div>
+            <div className="fs-sub">与主程序联动的浏览器端翻译扩展</div>
           </div>
         </div>
         <select

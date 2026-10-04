@@ -22,7 +22,7 @@ const engines = new Map<string, TranslationEngine>();
 /**
  * 路由规则表（骨架：仅登记已实现引擎）。
  * microsoft 免密钥在线（Bing 公开接口，免费、优先）；
- * mymemory 在线免费；ollama/lmstudio 为本地 LLM（由软件主体/用户自行启动，占位）；
+ * mymemory 在线免费；ollama/lmstudio 为本地 LLM（由主程序/用户自行启动，占位）；
  * siliconflow/openai 为 OpenAI 兼容云端引擎（需用户配置 API Key，优先级最高）。
  */
 const routeRules: RouteRule[] = [

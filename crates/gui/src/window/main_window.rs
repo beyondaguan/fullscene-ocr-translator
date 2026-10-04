@@ -500,7 +500,7 @@ impl AppState {
     /// 按指定 [`CaptureTarget`] 跑完整管线：截图 → OCR → 翻译。
     ///
     /// [`CaptureTarget::Region`] 保留在 `fs-core`（数据层仍支持区域截图，供将来复用或扩展调用）；
-    /// 但 2026-10-03 起软件主体已无框选入口——GUI 只走 `Active`（活动显示器整屏）。
+    /// 但 2026-10-03 起主程序已无框选入口——GUI 只走 `Active`（活动显示器整屏）。
     pub fn run_translation_pipeline_with_target(
         &self,
         target: CaptureTarget,

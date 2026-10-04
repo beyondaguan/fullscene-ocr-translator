@@ -10,7 +10,7 @@ export interface TranslationState {
 const initial: TranslationState = { loading: false, original: '', translation: '' };
 
 export interface TranslationApi {
-  /** 调用本地大模型翻译（软件主体侧） */
+  /** 调用本地大模型翻译（主程序侧） */
   translate: (text: string, src: string, dst: string) => Promise<string>;
 }
 

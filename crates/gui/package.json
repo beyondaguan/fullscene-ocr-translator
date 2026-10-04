@@ -2,7 +2,7 @@
   "name": "@fullscene/gui",
   "version": "1.8.0",
   "private": true,
-  "description": "软件主体 GUI（Tauri 2 + React shared-ui）",
+  "description": "主程序 GUI（Tauri 2 + React shared-ui）",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build --features custom-protocol",

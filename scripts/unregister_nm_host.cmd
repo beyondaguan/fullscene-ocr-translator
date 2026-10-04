@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  unregister_nm_host.cmd  — 全场景OCR翻译 NM 宿主卸载（薄包装）
+REM  unregister_nm_host.cmd  — 全场景OCR翻译 NM 桥卸载（薄包装）
 REM
 REM  实际逻辑见 unregister_nm_host.mjs（生成卸载 .reg）。
 REM  本文件仅为方便双击/命令行调用。

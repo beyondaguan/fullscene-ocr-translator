@@ -1,9 +1,9 @@
 /**
- * Native Messaging 桥接（软件主体内前端 ↔ Rust 命令层）。
+ * Native Messaging 桥接（主程序内前端 ↔ Rust 命令层）。
  *
  * 运行环境判断：
- * - 在软件主体（Tauri/WebView2）内：`window.__TAURI__` 存在，走 `invoke`；
- * - 在浏览器扩展 / 独立浏览器内：无 Tauri，返回明确「未在软件主体中」错误。
+ * - 在主程序（Tauri/WebView2）内：`window.__TAURI__` 存在，走 `invoke`；
+ * - 在浏览器扩展 / 独立浏览器内：无 Tauri，返回明确「未在主程序中」错误。
  *
  * 前端路由（欢迎页 / 工作界面 / 设置页 / AI 对话）统一经此桥调用 Rust 命令。
  */
@@ -69,7 +69,7 @@ function hasTauri(): boolean {
 
 function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
   if (!hasTauri()) {
-    return Promise.reject(new Error('未在软件主体中运行（无 Tauri 桥）'));
+    return Promise.reject(new Error('未在主程序中运行（无 Tauri 桥）'));
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tauri = (window as any).__TAURI__;
@@ -80,7 +80,7 @@ function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknow
   return fn(cmd, args);
 }
 
-/** 创建桥接 API（默认在软件主体内使用）。 */
+/** 创建桥接 API（默认在主程序内使用）。 */
 export function createNativeMsgApi(): NativeMsgApi {
   return {
     getConfig: () => invoke('get_config'),
