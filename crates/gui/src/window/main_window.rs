@@ -68,6 +68,11 @@ pub struct AppState {
     /// 必要性：整条管线实测耗时可达 38 秒（降级链上不可达引擎的超时叠加）。
     /// 若允许重入，多次按键会在消息泵里排队，用户看到的是「按了没反应」。
     pub pipeline_busy: Arc<AtomicBool>,
+    /// 划词浮窗是否正在显示（全局唯一）。
+    ///
+    /// 与 `pipeline_busy` 分开：划词不截图不 OCR，两者互不冲突，混用会导致
+    /// 「刚截完图就按划词被静默丢弃」。独立标记让连按 Alt+T 只保留一个浮窗。
+    pub word_bubble_active: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -86,6 +91,7 @@ impl AppState {
             translator: Mutex::new(Translator::from_config(&cfg)),
             hotkey_handle: Mutex::new(None),
             pipeline_busy: Arc::new(AtomicBool::new(false)),
+            word_bubble_active: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -377,6 +383,80 @@ impl AppState {
                         });
                     })
                 }
+                "selection_translate_word" => {
+                    let appc2 = appc.clone();
+                    Box::new(move || {
+                        crate::log::line("hotkey(word): selection_translate_word triggered");
+                        // 划词与截图管线互不冲突（不截图、不 OCR），故**不共用**
+                        // pipeline_busy——否则用户连按 Alt+T 时第二次会被静默丢弃。
+                        // 但浮窗本身全局唯一，需独立去重：已有浮窗在时直接忽略。
+                        let st = appc2.state::<AppState>();
+                        if st
+                            .word_bubble_active
+                            .swap(true, std::sync::atomic::Ordering::SeqCst)
+                        {
+                            crate::log::line("hotkey(word): 浮窗已在显示，忽略本次触发");
+                            return;
+                        }
+                        let appc3 = appc2.clone();
+                        std::thread::spawn(move || {
+                            // ① 取词。UIA 主路径 → 剪贴板兜底（阶段 A 已实现）。
+                            //    失败则降级到截屏 OCR（B4 阶段做），本阶段只记日志。
+                            let sel = match fs_core::wordpick::read_selection() {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    crate::log::line(&format!(
+                                        "hotkey(word): 取词失败（应降级到截屏 OCR，B4 实现）: {e}"
+                                    ));
+                                    st2_word_bubble_reset(&appc3);
+                                    return;
+                                }
+                            };
+                            crate::log::line(&format!(
+                                "hotkey(word): 取词成功 source={} chars={}",
+                                sel.source,
+                                sel.text.chars().count()
+                            ));
+                            let selected = sel.text.clone();
+
+                            // ② 显示小气泡。**必须**在 worker 线程里跑：
+                            //    show_bubble 内部创建窗口并跑自己的消息循环，
+                            //    放消息泵线程会卡死所有热键。
+                            //    锚点用 None —— 取词接口（阶段 A）不返回选区坐标，
+                            //    浮窗内部回落到光标位置；将来接精确坐标只改
+                            //    word_bubble::locate_bubble 一处。
+                            let content = crate::window::word_bubble::BubbleContent {
+                                source: selected,
+                                translation: String::new(),
+                                error: None,
+                            };
+                            let appc3_translate = appc3.clone();
+                            let appc3_dismiss = appc3;
+                            crate::window::word_bubble::show_bubble(
+                                None,
+                                content,
+                                // 翻译回调：**走 Translator 降级链**（不绕开）。
+                                Box::new(move |text: &str| {
+                                    let st = appc3_translate.state::<AppState>();
+                                    let tr = st.translator.lock().unwrap();
+                                    match tr.translate(text, "auto", "zh") {
+                                        Ok(t) => Ok(t),
+                                        Err(e) => {
+                                            crate::log::line(&format!(
+                                                "hotkey(word): 降级链翻译失败 {e}"
+                                            ));
+                                            Err(format!("翻译失败: {e}"))
+                                        }
+                                    }
+                                }),
+                                Box::new(move || {
+                                    st2_word_bubble_reset(&appc3_dismiss);
+                                }),
+                            );
+                        });
+                        crate::log::line("hotkey(word): dispatched");
+                    })
+                }
                 _ => continue,
             };
             actions.push(HotkeyAction {
@@ -607,6 +687,17 @@ fn ocr_models_ready(dir: Option<&str>) -> bool {
     fs_core::ocr_models::load_models(dir)
         .map(|m| m.ready())
         .unwrap_or(false)
+}
+
+/// 清除「划词浮窗正在显示」标记。
+///
+/// 必须从浮窗的关闭路径（`on_dismiss`）与取词失败路径**都**调用，
+/// 否则一次取词失败就会让后续所有划词热键被静默丢弃（标记永不复位）。
+fn st2_word_bubble_reset(app: &AppHandle) {
+    let st = app.state::<AppState>();
+    st.word_bubble_active
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::log::line("hotkey(word): 浮窗标记已复位");
 }
 
 /// 当前 Unix 毫秒时间戳（用于结果新鲜度判断）。

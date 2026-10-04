@@ -26,9 +26,13 @@ use serde::{Deserialize, Serialize};
 ///
 /// - `cycle_engine`：把降级链里**可用**引擎的首选往后挪一位（即「换一个引擎用」）。
 ///   只轮换可用引擎，跳过缺密钥的，否则按一次可能落到一个永远不可用的项上。
+/// - `selection_translate_word`：**划词**（阶段 B1/B2）。取词（UIA → 剪贴板）后在光标旁
+///   显示小气泡，**点击才翻**（button 模式）。不抢焦点——UIA 读的是前台窗口状态，
+///   抢焦点会令目标应用失焦、破坏 button 模式前提。
 pub const DEFAULT_HOTKEYS: &[(&str, &str)] = &[
     ("selection_translate", "Alt+Q"),
     ("fullscreen_translate", "Ctrl+Alt+O"),
+    ("selection_translate_word", "Alt+T"),
     ("cycle_engine", "Ctrl+Alt+E"),
 ];
 

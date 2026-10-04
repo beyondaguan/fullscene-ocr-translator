@@ -38,10 +38,16 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # ---- 离线翻译（Argos 语言包，纯 Rust 绑定 CTranslate2）----
 # ct2rs 构建期需要 CMake ≥ 3.16（编译 CTranslate2 C++），运行期零 Python 依赖。
 # sentencepiece 特性提供 ct2rs::tokenizers::sentencepiece::Tokenizer 封装。
-# 2026-10-04：crates.io 版缺 CTranslate2 的 submodule（third_party/spdlog 等头文件缺失），
-# 改用本地完整克隆（含 submodule，已手动补齐 spdlog/cpu_features/ruy/cpuinfo）。
-# 本地仓库：D:\g\ct2rs-clean（gitclone 镜像克隆 + 手动补齐第三方源码，已剥离 .git 防止 git 干扰）。
-ct2rs = { path = "D:/g/ct2rs-clean/ct2rs", features = ["sentencepiece"] }
+#
+# 2026-10-05：改回 crates.io 正式版，弃用本地镜像 D:\g\ct2rs-clean。
+# 起因：该镜像的 include/ 与 third_party/spdlog/include/spdlog/ 被大面积清空
+# （目录时间戳 15:47/ 20:46，src 等其他目录仍是14:01，明显非本次改动），
+# 导致 cc-rs 报 `C1083: 无法打开包括文件 "ct2rs/include/config.h"`，
+# fs-core/fs-gui 全部门禁无法编译。已核实 **crates.io 0.10.1 官方包内容完整**
+# （include/ 7 个头文件 + third_party/spdlog 20 个文件含 version.h），
+# 故正式版可完全替代镜像，且消除「本机绝对路径依赖」这一结构性缺陷
+# （镜像方案换机/换人/CI 全部编译不过）。
+ct2rs = { version = "0.10.1", features = ["sentencepiece"] }
 
 # ---- 错误处理 ----
 thiserror = "1"

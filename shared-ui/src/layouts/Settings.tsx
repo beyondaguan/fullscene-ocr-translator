@@ -113,7 +113,8 @@ const IN_APP_HOTKEYS: [string, string][] = [
 const GLOBAL_HOTKEY_ACTIONS: [string, string, string][] = [
   ['selection_translate', '十字框选截图翻译（主入口，窗口内外通用）', 'Alt+Q'],
   ['fullscreen_translate', '整屏即时翻译（无框选）', 'Ctrl+Alt+O'],
-  // ⚠️ 必须与 Rust `config::DEFAULT_HOTKEYS` 逐项对齐（config.rs:30-32），
+  ['selection_translate_word', '划词翻译（取词后出小气泡，点击才翻）', 'Alt+T'],
+  // ⚠️ 必须与 Rust `config::DEFAULT_HOTKEYS` 逐项对齐（config.rs:30-35），
   // 否则该动作在设置页不可见、用户也改不了。此前前端漏了这项，
   // 导致 `cycle_engine` 只能吃代码默认值、无法配置也无法在 UI 中确认。
   ['cycle_engine', '切换翻译引擎（首选引擎往后挪一位，需可用引擎 ≥ 2 个）', 'Ctrl+Alt+E'],
