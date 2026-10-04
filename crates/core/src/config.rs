@@ -80,8 +80,18 @@ pub struct TranslateConfig {
 impl Default for TranslateConfig {
     fn default() -> Self {
         Self {
-            // 默认「免密钥优先」：开箱即用（MyMemory/Google 免密钥），本地 LLM 作为兜底
-            fallback_order: vec!["mymemory".into(), "google".into(), "local-llm".into()],
+            // 默认「免密钥在线优先 → 离线兜底」：
+            // ① MyMemory/Google 免密钥，开箱即用；
+            // ② local-llm（Ollama）本地但需要模型在跑；
+            // ③ **argos 永远排最后**——纯离线兜底（只需语言包在位，不需网络/密钥），
+            //    前面的在线引擎都失败（含断网/限流/超时）时才由它接管。
+            //    实测其 `available()` 是纯目录判断、零网络开销，且推理本地完成、无隐私外泄。
+            fallback_order: vec![
+                "mymemory".into(),
+                "google".into(),
+                "local-llm".into(),
+                "argos".into(),
+            ],
             siliconflow_key: None,
             siliconflow_base_url: None,
             siliconflow_model: None,

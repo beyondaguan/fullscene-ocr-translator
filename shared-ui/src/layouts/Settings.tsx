@@ -352,7 +352,14 @@ export function Settings({
   );
 }
 
-const DEFAULT_ORDER = ['mymemory', 'google', 'local-llm'];
+/**
+ * 降级链默认顺序，**必须与 Rust `config::TranslateConfig::default()` 的 `fallback_order`
+ * 逐项一致**（config.rs:80）。两边不同步会导致设置页显示与实际引擎选择不符。
+ *
+ * 语义：免密钥在线优先 → 离线兜底。`argos` 固定排最后（纯离线，只需语言包在位，
+ * 不需网络/密钥），仅当前面全部失败（含断网/限流/超时）时接管。
+ */
+const DEFAULT_ORDER = ['mymemory', 'google', 'local-llm', 'argos'];
 
 interface HotkeyRecorderProps {
   actionId: string;

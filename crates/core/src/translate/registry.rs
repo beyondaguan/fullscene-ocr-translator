@@ -38,19 +38,19 @@ impl Registry {
         &self.engines
     }
 
-    /// 按降级链选第一个 available 的引擎；若链内无命中，兜底扫描任何可用引擎。
+    /// 按降级链选第一个 available 的引擎。
+    ///
+    /// 链内按顺序**跳过**不可用者（缺密钥 / 模型未就绪）继续往后找。
+    /// 若链内全不可用，返回 `None`（无可用引擎）由上层报错提示配置。
+    ///
+    /// **刻意不扫描注册表兜底**：那会绕过用户设定的排序意图，尤其会让离线兜底引擎
+    /// `argos`（`available()` 只要语言包在位就为 true）在链外被抢先选中，
+    /// 违反「在线优先、离线最后」的设计。
     pub fn select<'a>(&'a self, order: &[String]) -> Option<&'a dyn TranslateBase> {
-        for id in order {
-            if let Some(e) = self.get(id) {
-                if e.available() {
-                    return Some(e);
-                }
-            }
-        }
-        self.engines
-            .iter()
-            .find(|e| e.available())
-            .map(|b| b.as_ref())
+        order.iter().find_map(|id| {
+            self.get(id)
+                .filter(|e| e.available())
+        })
     }
 
     /// 把降级链里**当前首选的可用引擎**往后挪一位，返回新的首选引擎 id。
@@ -333,5 +333,62 @@ mod tests {
         r.register(Box::new(RecordingEngine { limit: 450, seen: Arc::clone(&seen) }));
         r.translate_with_fallback(&["rec".into()], "hi", "auto", "zh").unwrap();
         assert_eq!(seen.lock().unwrap().len(), 1, "短文本不应分片");
+    }
+
+    /// 可用性可控的引擎：用于验证「按链顺序选、绝不链外兜底」。
+    struct ToggleEngine {
+        id: &'static str,
+        is_available: bool,
+    }
+
+    impl TranslateBase for ToggleEngine {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+        fn label(&self) -> &'static str {
+            self.id
+        }
+        fn available(&self) -> bool {
+            self.is_available
+        }
+        fn translate(&self, text: &str, _s: &str, _d: &str) -> CoreResult<String> {
+            Ok(text.to_string())
+        }
+    }
+
+    #[test]
+    fn select_respects_chain_order() {
+        // oracle: 链内命中即返回，且取链上第一个 available 的
+        let mut r = Registry::new();
+        r.register(Box::new(ToggleEngine { id: "a", is_available: false }));
+        r.register(Box::new(ToggleEngine { id: "b", is_available: true }));
+        r.register(Box::new(ToggleEngine { id: "c", is_available: true }));
+        let order = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        assert_eq!(r.select(&order).map(|e| e.id()), Some("b"));
+    }
+
+    #[test]
+    fn select_does_not_fall_back_outside_chain() {
+        // 回归：曾有「链内全不可用 → 扫描注册表任意可用引擎」的兜底，会让离线引擎
+        // argos（available 只要语言包在位即为 true）在链外被抢先选中，
+        // 违反「在线优先、离线最后」。现在必须返回 None（无可用引擎）。
+        let mut r = Registry::new();
+        r.register(Box::new(ToggleEngine { id: "offline", is_available: false }));
+        r.register(Box::new(ToggleEngine { id: "chain-ok", is_available: true }));
+        // 链里只有不可用的 offline；chain-ok 在链外
+        let order = vec!["offline".to_string()];
+        assert_eq!(r.select(&order).map(|e| e.id()), None, "链外引擎不得被选中");
+    }
+
+    #[test]
+    fn fallback_errors_when_all_chain_entries_unavailable() {
+        // oracle: 链内全不可用 → 明确报错，绝不静默改用链外引擎
+        let mut r = Registry::new();
+        r.register(Box::new(ToggleEngine { id: "offline", is_available: false }));
+        r.register(Box::new(ToggleEngine { id: "chain-ok", is_available: true }));
+        let err = r
+            .translate_with_fallback(&["offline".to_string()], "hi", "auto", "zh")
+            .unwrap_err();
+        assert!(err.to_string().contains("无可用引擎"), "实际 {err}");
     }
 }
