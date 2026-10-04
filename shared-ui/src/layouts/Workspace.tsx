@@ -1,5 +1,5 @@
 import React from 'react';
-import { TextPane } from '../components/TextPane';
+import { TextPane, type PaneAction } from '../components/TextPane';
 import { SplitPane } from '../components/SplitPane';
 import { Select, SelectOption } from '../components/Select';
 import { Button } from '../components/Button';
@@ -47,6 +47,12 @@ export interface WorkspaceProps {
   onRetranslate: () => void;
   onCopy: (which: 'source' | 'translation') => void;
   onSpeak: (which: 'source' | 'translation') => void;
+  /** 收藏当前译文（写生词本 + toast 反馈） */
+  onFavorite?: () => void;
+  /** 划词「详解」：开启后显示「详解」按钮（复用 AI 助手，注入当前译文上下文） */
+  detailVisible?: boolean;
+  /** 点击「详解」按钮（通常为：打开 AI 助手抽屉 + 预填请求） */
+  onDetail?: () => void;
   speakSupported?: boolean;
   engines?: SelectOption[];
 }
@@ -74,6 +80,9 @@ export function Workspace({
   onRetranslate,
   onCopy,
   onSpeak,
+  onFavorite,
+  detailVisible = false,
+  onDetail,
   speakSupported = false,
   engines = ENGINES,
 }: WorkspaceProps) {
@@ -172,10 +181,15 @@ export function Workspace({
               value={translation}
               onChange={onChangeTranslation}
               placeholder={PLACEHOLDER_TRANSLATION}
-              actions={[
-                { key: 'copy', label: '复制', onClick: () => onCopy('translation'), disabled: !translation },
-                { key: 'speak', label: '朗读', onClick: () => onSpeak('translation'), disabled: !translation || !speakSupported },
-              ]}
+              actions={buildTranslationActions({
+                translation,
+                speakSupported,
+                onCopy,
+                onSpeak,
+                onFavorite,
+                detailVisible,
+                onDetail,
+              })}
             />
           }
           second={
@@ -195,4 +209,33 @@ export function Workspace({
       </div>
     </div>
   );
+}
+
+/** 译文面板右上角动作：收藏 / 详解 / 复制 / 朗读。 */
+function buildTranslationActions(args: {
+  translation: string;
+  speakSupported: boolean;
+  onCopy: (which: 'source' | 'translation') => void;
+  onSpeak: (which: 'source' | 'translation') => void;
+  onFavorite?: () => void;
+  detailVisible: boolean;
+  onDetail?: () => void;
+}): PaneAction[] {
+  const { translation, speakSupported, onCopy, onSpeak, onFavorite, detailVisible, onDetail } = args;
+  const actions: PaneAction[] = [];
+  if (onFavorite) {
+    actions.push({ key: 'favorite', label: '收藏', onClick: () => onFavorite(), disabled: !translation });
+  }
+  // 「详解」仅在开关开启（detailVisible）时渲染；无 AI 密钥时不渲染。
+  if (detailVisible && onDetail) {
+    actions.push({ key: 'detail', label: '详解', onClick: onDetail, disabled: !translation });
+  }
+  actions.push({ key: 'copy', label: '复制', onClick: () => onCopy('translation'), disabled: !translation });
+  actions.push({
+    key: 'speak',
+    label: '朗读',
+    onClick: () => onSpeak('translation'),
+    disabled: !translation || !speakSupported,
+  });
+  return actions;
 }
