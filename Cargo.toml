@@ -18,6 +18,14 @@ serde_json = "1"
 # OCR：PP-OCRv6 走 oar-ocr（内部绑定 ort），替代直接依赖 ort。
 # 理由：旧项目已用 oar-ocr 0.9 跑通真实模型推理；裸 ort 需自行实现 det/rec 前后处理。
 oar-ocr = "0.9"
+# ort 直接依赖，仅为开启 load-dynamic（不引入任何 API 使用）。
+# 起因：ct2rs 的 sentencepiece-sys 与 ort-sys 各自静态编译了一份 protobuf，
+# 链接期符号重复（LNK2005 google::protobuf::internal::* + LNK1169）。
+# ort 的 default features 含 download-binaries（静态链接 onnxruntime.dll → 拖入 protobuf），
+# 不含 load-dynamic。开 load-dynamic 后 ort 改为运行时动态加载 onnxruntime.dll，
+# 不再把 protobuf 静态链进二进制，从根上消除符号冲突。
+# 注意：需保证运行目录下存在 onnxruntime.dll（models/ 或 exe 同级）。
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "load-dynamic", "download-binaries", "copy-dylibs"] }
 image = "0.25"
 # HTTP：本地 LLM（Ollama / LM Studio）为 http 明文；云翻译引擎需 https，故开 tls
 # （Windows 上 native-tls 走 schannel，无需 openssl/外部库）
@@ -26,6 +34,14 @@ ureq = { version = "2", default-features = false, features = ["json", "tls"] }
 dirs = "5"
 # 历史库
 rusqlite = { version = "0.31", features = ["bundled"] }
+
+# ---- 离线翻译（Argos 语言包，纯 Rust 绑定 CTranslate2）----
+# ct2rs 构建期需要 CMake ≥ 3.16（编译 CTranslate2 C++），运行期零 Python 依赖。
+# sentencepiece 特性提供 ct2rs::tokenizers::sentencepiece::Tokenizer 封装。
+# 2026-10-04：crates.io 版缺 CTranslate2 的 submodule（third_party/spdlog 等头文件缺失），
+# 改用本地完整克隆（含 submodule，已手动补齐 spdlog/cpu_features/ruy/cpuinfo）。
+# 本地仓库：D:\g\ct2rs-clean（gitclone 镜像克隆 + 手动补齐第三方源码，已剥离 .git 防止 git 干扰）。
+ct2rs = { path = "D:/g/ct2rs-clean/ct2rs", features = ["sentencepiece"] }
 
 # ---- 错误处理 ----
 thiserror = "1"

@@ -1,11 +1,13 @@
 //! Translate 轴全部引擎实现。新增引擎 = 在此目录加一个文件 + 在 [`register_all`] 注册一行。
 
+mod argos;
 mod azure;
 mod google;
 mod local_llm;
 mod mymemory;
 mod openai_compat;
 
+pub use argos::ArgosEngine;
 pub use azure::{BingEngine, EdgeEngine};
 pub use google::GoogleEngine;
 pub use local_llm::LocalLlmEngine;
@@ -24,4 +26,5 @@ pub fn register_all(registry: &mut Registry, cfg: &Config) {
     registry.register(Box::new(OpenAiEngine::from_config(cfg)));
     registry.register(Box::new(EdgeEngine::from_config(cfg)));
     registry.register(Box::new(BingEngine::from_config(cfg)));
+    registry.register(Box::new(ArgosEngine::from_config(cfg)));
 }

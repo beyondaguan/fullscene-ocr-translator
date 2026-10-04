@@ -131,6 +131,10 @@ pub struct Config {
     /// Translate 轴配置（M7）。缺省时回落 [`TranslateConfig::default`]。
     #[serde(default)]
     pub translate: Option<TranslateConfig>,
+    /// Argos 离线翻译语言包根目录（含 `{from}_{to}/{version}/model/` + `sentencepiece.model`）。
+    /// None = 使用默认 `%APPDATA%/FullSceneOCR/argos/models`。
+    #[serde(default)]
+    pub argos_models_dir: Option<String>,
 }
 
 impl Default for Config {
@@ -145,6 +149,7 @@ impl Default for Config {
             ui_font_scale: None,
             ui_accent: None,
             translate: None,
+            argos_models_dir: None,
         }
     }
 }
@@ -206,6 +211,7 @@ mod tests {
         assert!(cfg.hotkeys.is_empty());
         assert_eq!(cfg.ocr_model_dir, None);
         assert_eq!(cfg.translate, None);
+        assert_eq!(cfg.argos_models_dir, None);
     }
 
     #[test]
@@ -223,6 +229,7 @@ mod tests {
             ui_font: None,
             ui_font_scale: None,
             ui_accent: None,
+            argos_models_dir: Some("D:/argos/models".into()),
             translate: Some(TranslateConfig {
                 fallback_order: vec!["openai".into(), "edge".into()],
                 siliconflow_key: Some("sk-sf".into()),
@@ -248,6 +255,7 @@ mod tests {
                 ui_font: None,
                 ui_font_scale: None,
                 ui_accent: None,
+                argos_models_dir: None,
                 translate: None
             }
         );
@@ -293,6 +301,7 @@ mod tests {
             "ui_font_scale",
             "ui_accent",
             "translate",
+            "argos_models_dir",
         ];
         let mut props_sorted = props;
         props_sorted.sort();

@@ -29,6 +29,8 @@ export interface SettingsData {
   ui_accent?: string | null;
   /** 翻译轴配置（降级链 + 各云引擎密钥），与 Rust `TranslateConfig` 对齐 */
   translate?: TranslateSettings;
+  /** Argos 离线翻译语言包根目录（含 {from}_{to}/{version}/model/ + sentencepiece.model）。留空使用默认 %APPDATA%/FullSceneOCR/argos/models */
+  argos_models_dir?: string | null;
 }
 
 export interface TranslateSettings {
@@ -71,6 +73,10 @@ export interface SettingsProps {
   onHotkeyCapture?: (listening: boolean) => void;
   /** 指定引擎试译（设置页「测试」按钮），返回译文或抛错 */
   onTestEngine?: (id: string) => Promise<string>;
+  /** Argos 离线翻译模型目录（留空用默认 %APPDATA%/FullSceneOCR/argos/models） */
+  argosModelsDir?: string | null;
+  /** Argos 模型目录变更 */
+  onArgosModelsDirChange?: (dir: string | null) => void;
 }
 
 type Category = 'general' | 'ocr' | 'translate' | 'ai' | 'hotkey' | 'about';
@@ -127,6 +133,8 @@ export function Settings({
   onTestConnection,
   onTestEngine,
   onHotkeyCapture,
+  argosModelsDir,
+  onArgosModelsDirChange,
 }: SettingsProps) {
   const [cat, setCat] = useState<Category>('general');
   const [cfg, setCfg] = useState<SettingsData>(initial ?? {});
@@ -193,8 +201,10 @@ export function Settings({
             value={cfg.translate ?? {}}
             llmEndpoint={cfg.llm_endpoint ?? ''}
             llmModel={cfg.llm_model ?? ''}
+            argosModelsDir={argosModelsDir ?? cfg.argos_models_dir ?? ''}
             onChange={(patch) => set({ translate: { ...(cfg.translate ?? {}), ...patch } })}
             onLlmChange={(patch) => set(patch)}
+            onArgosModelsDirChange={onArgosModelsDirChange ?? ((v) => set({ argos_models_dir: v }))}
             onTestEngine={onTestEngine}
             onTestConnection={onTestConnection}
           />
@@ -414,8 +424,10 @@ interface TranslatePaneProps {
   value: TranslateSettings;
   llmEndpoint: string;
   llmModel: string;
+  argosModelsDir: string;
   onChange: (patch: Partial<TranslateSettings>) => void;
   onLlmChange: (patch: Partial<SettingsData>) => void;
+  onArgosModelsDirChange: (dir: string | null) => void;
   onTestEngine?: (id: string) => Promise<string>;
   onTestConnection?: (endpoint: string, model: string) => Promise<string>;
 }
@@ -616,8 +628,10 @@ function TranslatePane({
   value,
   llmEndpoint,
   llmModel,
+  argosModelsDir,
   onChange,
   onLlmChange,
+  onArgosModelsDirChange,
   onTestEngine,
   onTestConnection,
 }: TranslatePaneProps) {
@@ -726,6 +740,11 @@ function TranslatePane({
               </span>
             </span>
             <span style={badge(e.available)}>{e.available ? '已就绪' : '未配置'}</span>
+            {!order.includes(e.id) && (
+              <Button size="sm" variant="text" onClick={() => setOrder([...order, e.id])}>
+                加入降级链
+              </Button>
+            )}
             {onTestEngine && (
               <Button size="sm" onClick={() => doTest(e.id)} disabled={testing !== null}>
                 {testing === e.id ? '测试中…' : '测试'}
@@ -823,6 +842,28 @@ function TranslatePane({
         llmModel={llmModel}
         onTestConnection={onTestConnection}
       />
+
+      <div style={sectionTitle}>Argos 离线翻译</div>
+      <div style={sectionHint}>
+        使用 Argos 语言包（ct2rs 纯 Rust / CTranslate2，完全离线，无网络请求）。语言包目录结构：
+        {'{models}/{from}_{to}/{version}/model/ + sentencepiece.model'}，可直接复制 Argos 安装目录的
+        packages/translate-* 目录。留空使用默认 %APPDATA%/FullSceneOCR/argos/models。
+      </div>
+      <Input
+        label="Argos 模型目录（留空用默认）"
+        value={argosModelsDir}
+        onChange={(e) => onArgosModelsDirChange(e.target.value || null)}
+      />
+      <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+        <Button size="sm" disabled={testing !== null} onClick={() => doTest('argos')}>
+          {testing === 'argos' ? '测试中…' : '测试'}
+        </Button>
+        {results['argos'] && (
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+            {results['argos']}
+          </span>
+        )}
+      </div>
     </>
   );
 }

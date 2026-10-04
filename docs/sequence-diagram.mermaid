@@ -1,0 +1,51 @@
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as React (Workspace/Settings)
+    participant CMD as commands.rs
+    participant TR as Translator
+    participant REG as Registry
+    participant AE as ArgosEngine
+    participant CT2 as ct2rs Translator (Arc 缓存)
+
+    Note over UI,CT2: 主翻译链路（Argos 参与降级链）
+    UI->>CMD: invoke('translate_text', {text, src, dst})
+    CMD->>TR: translate(&text, &src, &dst)
+    TR->>REG: translate_with_fallback_detailed(order, text, src, dst)
+
+    rect rgb(240, 248, 255)
+        Note over REG,AE: Argos 作为可用引擎被尝试
+        REG->>AE: available()
+        AE-->>REG: true（models_dir 已配置且存在语言包）
+        REG->>AE: translate(text, src, dst)
+        AE->>AE: src=="auto" ? 报错 : 语言代码小写化
+        AE->>AE: split_for_translation(text, max_chars=1000)
+        alt 首次加载该语言对
+            AE->>AE: resolve_model_dir(src, dst) 扫描 {from}_{to}/{version}/model
+            AE->>CT2: with_tokenizer(model_dir, from_file(spm, spm), Config::default())
+            CT2-->>AE: Translator 实例
+            AE->>AE: 存入缓存 HashMap<(src,dst), Arc<Translator>>
+        else 缓存命中
+            AE->>AE: clone Arc（释放锁）
+        end
+        AE->>CT2: translate_batch(chunks, TranslationOptions::default(), None)
+        CT2-->>AE: Vec<(String, Option<f32>)>
+        AE->>AE: 按原顺序 join("\n")
+        AE-->>REG: Ok(译文)
+        REG-->>TR: TranslationOutcome{ text, engine:"argos", position, chain_len, tried }
+    end
+
+    TR-->>CMD: Ok(text)
+    CMD-->>UI: translation
+
+    Note over UI,AE: 设置页测试按钮链路
+    UI->>CMD: invoke('test_engine', {id:'argos', text:null})
+    CMD->>CMD: src="auto" -> 归一化为 "en"（argos 专用）
+    CMD->>TR: translate_with("argos", text, "en", "zh")
+    TR->>REG: get("argos")
+    REG-->>TR: ArgosEngine
+    TR->>AE: translate(text, "en", "zh")
+    AE-->>TR: Ok(译文)
+    TR-->>CMD: Ok(译文)
+    CMD-->>UI: 译文
+```

@@ -13,9 +13,16 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 image = { workspace = true }
 oar-ocr = { workspace = true }
+# 仅用于开启 ort 的 load-dynamic 特性（feature 统一化），代码中不直接调用 ort API。
+# 作用：让 ONNX Runtime 运行时动态加载，避免其静态 protobuf 与 ct2rs/sentencepiece
+# 的 protobuf 符号冲突（LNK2005 / LNK1169）。
+ort = { workspace = true }
 ureq = { workspace = true }
 dirs = { workspace = true }
 rusqlite = { workspace = true }
+
+# Argos 离线翻译引擎：ct2rs（CTranslate2 纯 Rust 绑定，sentencepiece 分词器）
+ct2rs = { workspace = true }
 
 # 平台能力（截图 GDI / 全局热键 / 托盘）仅 Windows 目标编译
 [target.'cfg(windows)'.dependencies]

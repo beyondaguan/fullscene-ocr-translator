@@ -59,6 +59,10 @@
         "bing_key": { "type": ["string", "null"] },
         "bing_region": { "type": ["string", "null"] }
       }
+    },
+    "argos_models_dir": {
+      "type": ["string", "null"],
+      "description": "Argos 离线翻译语言包根目录（含 {from}_{to}/{version}/model/ + sentencepiece.model）。留空使用默认 %APPDATA%/FullSceneOCR/argos/models"
     }
   }
 }

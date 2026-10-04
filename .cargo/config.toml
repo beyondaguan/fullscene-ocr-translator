@@ -1,0 +1,14 @@
+# 全局统一 CRT：静态（/MT）
+#
+# 起因：workspace 内的 C++ 依赖对 CRT 的要求不一致，链接期冲突。
+#   - ort-sys（ONNX Runtime）        → 静态链 onnxruntime.dll
+#   - sentencepiece-sys（ct2rs）     → 跟随 crt-static
+#   - esaxx-rs（lindera/oar-ocr 日文分词）→ 无条件 /MT 静态 CRT
+#   - CTranslate2（ct2rs 内 CMake） → 硬编码 /MT
+# 混用 /MT 与 /MD 会报 LNK2038 / LNK1319（RuntimeLibrary 不匹配）与
+# LNK1169（std::Yarn<char> 等符号重复定义）。
+#
+# 统一为 /MT（crt-static）后，所有 C++ 依赖与 Rust std 走同一套 CRT。
+# 这是 ct2rs build.rs 官方注释推荐的做法。
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]

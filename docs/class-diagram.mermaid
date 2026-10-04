@@ -1,0 +1,94 @@
+```mermaid
+classDiagram
+    direction LR
+
+    class TranslateBase {
+        <<interface>>
+        +id() &'static str
+        +label() &'static str
+        +available() bool
+        +supports(src: &str, dst: &str) bool
+        +max_chars() usize
+        +translate(text: &str, src: &str, dst: &str) Result~String~
+        +chat(messages: &[ChatMessage]) Result~String~
+    }
+
+    class ArgosEngine {
+        -models_dir: PathBuf
+        -cache: Mutex~HashMap~(String, String), Arc~Translator~>>
+        +from_config(cfg: &Config) Self
+        +id() &'static str
+        +label() &'static str
+        +available() bool
+        +supports(src: &str, dst: &str) bool
+        +max_chars() usize
+        +translate(text: &str, src: &str, dst: &str) Result~String~
+        -resolve_model_dir(src: &str, dst: &str) Result~PathBuf~
+        -spm_path(src: &str, dst: &str) Result~PathBuf~
+        -load_translator(src: &str, dst: &str) Result~Arc~Translator~>>
+    }
+
+    class Config {
+        +argos_models_dir: Option~String~
+        +ocr_model_dir: Option~String~
+        +llm_endpoint: Option~String~
+        +llm_model: Option~String~
+        +ui_theme: Option~String~
+        +ui_font: Option~String~
+        +ui_font_scale: Option~u16~
+        +ui_accent: Option~String~
+        +hotkeys: HashMap~String, String~
+        +translate: Option~TranslateConfig~
+    }
+
+    class TranslateConfig {
+        +fallback_order: Vec~String~
+        +siliconflow_key: Option~String~
+        +openai_key: Option~String~
+        +edge_key: Option~String~
+        +bing_key: Option~String~
+    }
+
+    class Registry {
+        -engines: Vec~Box~dyn TranslateBase~>
+        +register(engine: Box~dyn TranslateBase~)
+        +get(id: &str) Option~&dyn TranslateBase~
+        +list() &[Box~dyn TranslateBase~]
+        +select(order: &[String]) Option~&dyn TranslateBase~
+        +translate_with_fallback_detailed(order: &[String], text: &str, src: &str, dst: &str) Result~TranslationOutcome~
+    }
+
+    class Translator {
+        -registry: Registry
+        -fallback_order: Vec~String~
+        +from_config(cfg: &Config) Self
+        +translate(text: &str, src: &str, dst: &str) Result~String~
+        +translate_detailed(text: &str, src: &str, dst: &str) Result~TranslationOutcome~
+        +translate_with(engine_id: &str, text: &str, src: &str, dst: &str) Result~String~
+        +list_engines() Vec~EngineInfo~
+        +chat(messages: &[ChatMessage]) Result~String~
+    }
+
+    class TranslationOutcome {
+        +text: String
+        +engine: String
+        +position: Option~usize~
+        +chain_len: usize
+        +tried: usize
+    }
+
+    class EngineInfo {
+        +id: String
+        +label: String
+        +available: bool
+    }
+
+    TranslateBase <|.. ArgosEngine : implements
+    ArgosEngine --> Config : reads argos_models_dir
+    Registry o-- TranslateBase : Vec<Box<dyn>>
+    Translator *-- Registry
+    Translator --> Config : reads translate.fallback_order
+    Translator --> TranslateConfig : fallback_order
+    Registry ..> TranslationOutcome : returns
+    Translator ..> EngineInfo : list_engines()
+```

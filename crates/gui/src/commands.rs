@@ -88,10 +88,13 @@ pub fn test_engine(
     text: Option<String>,
 ) -> Result<String, String> {
     let tr = state.translator.lock().unwrap();
+    // Argos 不做自动检测（src=="auto" 直接报错）；设置页测试按钮默认英文文本，
+    // 因此对 argos 把 src 归一化为 "en"，其余引擎仍走 auto 自动检测。
+    let src = if id == "argos" { "en" } else { "auto" };
     tr.translate_with(
         &id,
         text.as_deref().unwrap_or("Hello, world! This is a translation test."),
-        "auto",
+        src,
         "zh",
     )
     .map_err(|e| e.to_string())
