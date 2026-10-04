@@ -112,6 +112,17 @@ export function IconChat({ size = 18 }: IconProps) {
   );
 }
 
+/** 生词本（打开的书 + 星标） */
+export function IconWordbook({ size = 18 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+      <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z" />
+      <path d="M12 6.5l.9 1.9 2.1.3-1.5 1.5.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.5 2.1-.3z" />
+    </svg>
+  );
+}
+
 export function IconClose({ size = 18 }: IconProps) {
   return (
     <svg {...svgProps(size)}>

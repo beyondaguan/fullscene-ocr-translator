@@ -38,6 +38,20 @@ export interface PipelineSnapshot {
   engines_tried: number;
 }
 
+/** 生词本条目（与 Rust `WordEntry` 对齐，由 `list_words` 命令返回）。 */
+export interface WordEntry {
+  id: number;
+  term: string;
+  translation: string;
+  context?: string | null;
+  context_translation?: string | null;
+  engine: string;
+  src_lang?: string;
+  dst_lang?: string;
+  source_app?: string | null;
+  created_at: string;
+}
+
 export interface NativeMsgApi {
   getConfig: () => Promise<unknown>;
   saveConfig: (config: unknown) => Promise<void>;
@@ -57,6 +71,23 @@ export interface NativeMsgApi {
   /** 拉取最近一次管线结果：事件丢失时的权威兜底来源 */
   getResult: () => Promise<PipelineSnapshot>;
   clearHistory: () => Promise<void>;
+  /** 生词本：列出词条（query 为搜索关键词，可空） */
+  listWords: (limit: number, query?: string) => Promise<WordEntry[]>;
+  /** 生词本：收藏当前译文（返回新条目 id） */
+  addWord: (word: {
+    term: string;
+    translation: string;
+    context?: string | null;
+    context_translation?: string | null;
+    engine?: string;
+    src_lang?: string;
+    dst_lang?: string;
+    source_app?: string | null;
+  }) => Promise<number>;
+  /** 生词本：取消收藏（删除条目） */
+  deleteWord: (id: number) => Promise<void>;
+  /** 生词本：查询某词是否已收藏（收藏按钮初始态） */
+  isWordSaved: (term: string) => Promise<boolean>;
 }
 
 interface TauriInvoke {
@@ -105,5 +136,12 @@ export function createNativeMsgApi(): NativeMsgApi {
     getHistory: (limit) => invoke('get_history', { limit }) as Promise<unknown[]>,
     getResult: () => invoke('get_result') as Promise<PipelineSnapshot>,
     clearHistory: () => invoke('clear_history').then(() => undefined),
+    listWords: (limit, query) =>
+      invoke('list_words', { limit, query: query ?? null }) as Promise<WordEntry[]>,
+    addWord: (word) =>
+      invoke('add_word', { word: word ?? null }) as Promise<number>,
+    deleteWord: (id) => invoke('delete_word', { id }) as Promise<void>,
+    isWordSaved: (term) =>
+      invoke('is_word_saved', { term }) as Promise<boolean>,
   };
 }

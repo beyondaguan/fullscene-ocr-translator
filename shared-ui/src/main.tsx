@@ -4,6 +4,7 @@ import { AppShell, type WorkspaceMode, type DrawerKey, type DrawerSpec } from '.
 import { Workspace, ENGINES } from './layouts/Workspace';
 import { Chat, type ChatMessage } from './layouts/Chat';
 import { History, type HistoryItem } from './layouts/History';
+import { Wordbook, type WordEntry } from './layouts/Wordbook';
 import { Settings, type SettingsData } from './layouts/Settings';
 import { useTheme } from './hooks/useTheme';
 import { createNativeMsgApi, type EngineInfo, type NativeMsgApi, type PipelineSnapshot } from './hooks/useNativeMsg';
@@ -12,6 +13,13 @@ import type { SelectOption } from './components/Select';
 import { countChars } from './utils/text';
 import './tokens.css';
 import './global.css';
+
+declare global {
+  interface Window {
+    /** Rust 热键切换后的 eval 兜底入口：事件系统失效时仍能同步 UI（见 main_window.rs cycle_engine）。 */
+    __fs_on_engine_cycled?: (id: string) => void;
+  }
+}
 
 /**
  * 主动拉取最近一次管线结果并回填两个文本区。
@@ -142,6 +150,9 @@ function Root() {
   });
   const [engines, setEngines] = React.useState<EngineInfo[]>([]);
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
+  /** 生词本条目与搜索词 */
+  const [words, setWords] = React.useState<WordEntry[]>([]);
+  const [wordQuery, setWordQuery] = React.useState('');
   /** 最近一次管线的引擎信息（状态栏显示「实际是谁翻译的」）。 */
   const [lastRun, setLastRun] = React.useState<PipelineSnapshot | null>(null);
 
@@ -173,6 +184,10 @@ function Root() {
     api
       .getHistory(50)
       .then((h) => setHistory(h as HistoryItem[]))
+      .catch(() => {});
+    api
+      .listWords(200)
+      .then(setWords)
       .catch(() => {});
   }, [api]);
 
@@ -215,12 +230,17 @@ function Root() {
       const c = listen('engine-cycled', (e: { payload?: string }) => {
         const newPrimary = e?.payload ?? '';
         if (newPrimary) {
+          // ★ 最先同步下拉框选中值：后续 showToast/getStatus 若抛错也不影响核心状态
+          setEngine(newPrimary);
           const label =
             engines.find((x) => x.id === newPrimary)?.label ??
             ENGINES.find((x) => x.value === newPrimary)?.label ??
             newPrimary;
-          showToast(`已切换至 ${label}`);
-          setEngine(newPrimary); // ★ 同步下拉框选中值
+          try {
+            showToast(`已切换至 ${label}`);
+          } catch {
+            // toast 是纯增强，失败不影响引擎状态
+          }
         }
         api.getStatus()
           .then((st) => setConfig((st.config ?? {}) as SettingsData))
@@ -238,7 +258,10 @@ function Root() {
             return;
           }
           unlistenCycle = u;
-        }).catch(() => {});
+          console.log('[fs] engine-cycled listener attached');
+        }).catch((err: unknown) => {
+          console.error('[fs] engine-cycled listen 注册失败', err);
+        });
       }
       if (p && typeof p.then === 'function') {
         p.then((u: () => void) => {
@@ -258,11 +281,33 @@ function Root() {
     };
 
     attach();
+
+    // 全局兜底：Rust 热键切换后除了 `engine-cycled` 事件，还会用 `eval` 直接调用此函数
+    //（见 main_window.rs cycle_engine）。事件系统若失效，这里仍能同步下拉框/状态栏。
+    window.__fs_on_engine_cycled = (id: string) => {
+      if (disposed) return;
+      setEngine(id);
+      api
+        .getStatus()
+        .then((st) => setConfig((st.config ?? {}) as SettingsData))
+        .catch(() => {});
+      api
+        .listEngines()
+        .then(setEngines)
+        .catch(() => {});
+    };
+
     // 兜底 #2：主窗口每次重新可见（框选后被 show 回来）都拉一次最新结果。
     // 事件是单向的、可能丢失；窗口可见性变化是可靠信号，能兜住绝大多数丢事件场景。
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         pullResult(api, setSource, setTranslation, setLastRun);
+        // 兜底 #3：热键切换等配置变化事件可能丢失（engine-cycled 曾出现事件未达前端），
+        // 回看窗口时主动拉一次配置，让下拉框/状态栏/设置页的降级链显示保持同步。
+        api
+          .getStatus()
+          .then((st) => setConfig((st.config ?? {}) as SettingsData))
+          .catch(() => {});
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -270,6 +315,7 @@ function Root() {
 
     return () => {
       disposed = true;
+      window.__fs_on_engine_cycled = undefined;
       if (timer !== undefined) window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
@@ -354,6 +400,62 @@ function Root() {
     setTranslation('');
     setError(undefined);
   }, []);
+
+  // —— 生词本（C3/C4）——
+  const refreshWords = React.useCallback(
+    (q?: string) => {
+      api
+        .listWords(200, q ?? wordQuery)
+        .then(setWords)
+        .catch(() => {});
+    },
+    [api, wordQuery],
+  );
+
+  const doQueryWords = React.useCallback(
+    (q: string) => {
+      setWordQuery(q);
+      api
+        .listWords(200, q)
+        .then(setWords)
+        .catch(() => {});
+    },
+    [api],
+  );
+
+  /** 收藏当前译文（主画布「收藏 ★」按钮）：写生词本 + toast 即时反馈。 */
+  const doFavorite = React.useCallback(async () => {
+    if (!source.trim() || !translation.trim()) {
+      showToast('没有可收藏的译文');
+      return;
+    }
+    try {
+      const id = await api.addWord({
+        term: source,
+        translation,
+        src_lang: srcLang === 'auto' ? 'auto' : srcLang,
+        dst_lang: dstLang,
+      });
+      showToast(`已收藏「${source.slice(0, 24)}」`);
+      refreshWords();
+      void id;
+    } catch (e) {
+      showToast(`收藏失败: ${String(e)}`);
+    }
+  }, [api, source, translation, srcLang, dstLang, showToast, refreshWords]);
+
+  const doDeleteWord = React.useCallback(
+    (id: number) => {
+      api
+        .deleteWord(id)
+        .then(() => {
+          setWords((ws) => ws.filter((w) => w.id !== id));
+          showToast('已取消收藏');
+        })
+        .catch((e) => showToast(`删除失败: ${String(e)}`));
+    },
+    [api, showToast],
+  );
 
   const doRetranslate = React.useCallback(async () => {
     if (!source.trim()) return;
@@ -446,6 +548,17 @@ function Root() {
     [api, chatMessages, translation, source],
   );
 
+  /** 划词「详解」：打开 AI 助手抽屉并发起详解请求（复用 sendChat 的上下文注入）。 */
+  const doDetail = React.useCallback(() => {
+    if (!translation.trim()) {
+      showToast('没有可详解的译文');
+      return;
+    }
+    setActiveDrawer('chat');
+    // sendChat 会把当前译文/原文作为 system 上下文注入，这里只发用户指令。
+    void sendChat('请为当前译文生成详解：重点词汇、例句、语法分析、用法说明。');
+  }, [translation, sendChat, showToast]);
+
   const saveConfig = React.useCallback(
     async (cfg: SettingsData) => {
       try {
@@ -487,7 +600,11 @@ function Root() {
   const testConnection = React.useCallback(
     async (endpoint: string, model: string) => {
       try {
-        const r = await api.translateText('ping', 'auto', 'zh');
+        // 直达 local-llm 试译（test_engine 绕过降级链）。此前借道 translateText
+        // 走整条降级链：链首引擎慢时按钮干等 60s+（表现为「无结果返回」），
+        // 且链首成功会误报「端点可达」——被测的本地 LLM 根本没被碰到。
+        // 注意测的是**已保存**的 endpoint/model；改动后需先「应用并保存」再测。
+        const r = await api.testEngine('local-llm');
         return r ? `端点可达（模型 ${model} @ ${endpoint || '默认'}）` : '连接失败';
       } catch (e) {
         return `连接失败: ${String(e)}`;
@@ -499,6 +616,25 @@ function Root() {
   const testEngine = React.useCallback(
     async (id: string) => api.testEngine(id),
     [api],
+  );
+
+  // 右上角引擎下拉 = **真实切换入口**：把所选引擎挪到降级链首位并落盘。
+  // 此前 onEngineChange 只改本地 state（显示假切换），实际翻译仍走旧降级链，
+  // 且下拉框（本地 state）与状态栏（读 config）各看各的数据源 → 两处显示不同步。
+  // 现在三处显示（下拉框 / 状态栏 / 设置页）统一锚定 config.translate.fallback_order[0]，
+  // 落盘走 saveConfig → Rust update_config 会重建 Translator，路由立即生效。
+  const doEngineChange = React.useCallback(
+    (id: string) => {
+      setEngine(id); // 本地立即响应，不等落盘往返
+      const cur = configRef.current;
+      const order = cur.translate?.fallback_order ?? [];
+      const next = [id, ...order.filter((x) => x !== id)];
+      saveConfig({
+        ...cur,
+        translate: { ...(cur.translate ?? {}), fallback_order: next },
+      }).catch(() => {}); // 失败已由 saveConfig 内 setError 反馈到工作区
+    },
+    [saveConfig],
   );
 
   const pickHistory = React.useCallback((item: HistoryItem) => {
@@ -543,6 +679,15 @@ function Root() {
         case 'history':
           toggleDrawer('history');
           break;
+        case 'wordbook':
+          toggleDrawer('wordbook');
+          break;
+        case 'favorite':
+          void doFavorite();
+          break;
+        case 'detail':
+          doDetail();
+          break;
         case 'image':
           doImage();
           break;
@@ -559,7 +704,7 @@ function Root() {
           break;
       }
     },
-    [doScreenshot, doPaste, doCopy, doSpeak, doSwap, doClear, toggleDrawer],
+    [doScreenshot, doPaste, doCopy, doSpeak, doSwap, doClear, doFavorite, doDetail, toggleDrawer],
   );
 
   const engineLabel = ENGINES.find((e) => e.value === engine)?.label ?? engine;
@@ -602,6 +747,15 @@ function Root() {
       : ENGINES;
 
   const selectedEngineAvailable = engines.find((e) => e.id === preferredEngineId)?.available;
+
+  // 划词「详解」开关：设置页 `wordbook_detail_enabled` 开启，且存在可用的 AI 对话密钥时，
+  // 译文区才渲染「详解」按钮（无密钥时静默隐藏，避免点了没反应）。
+  const aiKeyConfigured = Boolean(
+    config.translate?.siliconflow_key ||
+      config.translate?.openai_key ||
+      config.llm_endpoint?.trim(),
+  );
+  const detailEnabled = Boolean(config.wordbook_detail_enabled) && aiKeyConfigured;
 
   const engineCell = preferredEngineId ? (
     <span key="engine" title={`降级链：${fallbackChainLabel}`}>
@@ -649,6 +803,18 @@ function Root() {
     drawers.history = {
       title: '翻译历史',
       body: <History items={history} onPick={pickHistory} onClear={clearHistory} />,
+    };
+  } else if (activeDrawer === 'wordbook') {
+    drawers.wordbook = {
+      title: '生词本',
+      body: (
+        <Wordbook
+          items={words}
+          query={wordQuery}
+          onQueryChange={doQueryWords}
+          onDelete={doDeleteWord}
+        />
+      ),
     };
   } else if (activeDrawer === 'settings') {
     drawers.settings = {
@@ -705,10 +871,13 @@ function Root() {
           engines={engineOptions}
           onLangChange={(which, value) => (which === 'src' ? setSrcLang(value) : setDstLang(value))}
           onSwapLang={doSwap}
-          onEngineChange={setEngine}
+          onEngineChange={doEngineChange}
           onRetranslate={doRetranslate}
           onCopy={doCopy}
           onSpeak={doSpeak}
+          onFavorite={doFavorite}
+          detailVisible={detailEnabled}
+          onDetail={doDetail}
           speakSupported={ttsSupported}
         />
         {/* 本地图片 OCR 用：隐藏的文件选择器，点击「图片」按钮时触发 */}

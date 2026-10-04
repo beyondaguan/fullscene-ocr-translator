@@ -13,6 +13,7 @@ import {
   IconSettings,
   IconSpeak,
   IconSwap,
+  IconWordbook,
 } from '../icons';
 import { useHotkey } from '../hooks/useHotkey';
 
@@ -24,7 +25,7 @@ import { useHotkey } from '../hooks/useHotkey';
  * 主链「截图→OCR→翻译→回填」稳定后再评估是否恢复。
  */
 export type WorkspaceMode = 'screenshot';
-export type DrawerKey = 'chat' | 'history' | 'settings';
+export type DrawerKey = 'chat' | 'history' | 'wordbook' | 'settings';
 
 export interface DrawerSpec {
   title: string;
@@ -75,6 +76,7 @@ export function AppShell({
       screenshot: () => actionRef.current('screenshot'),
       chat: () => actionRef.current('chat'),
       history: () => actionRef.current('history'),
+      wordbook: () => actionRef.current('wordbook'),
       settings: () => actionRef.current('settings'),
       paste: () => actionRef.current('paste'),
       copy: () => actionRef.current('copy'),
@@ -92,6 +94,7 @@ export function AppShell({
   // 所以「窗口内 / 窗口外统一为 Alt+Q」的正确实现是：只由 Rust 注册一次。
   useHotkey('Alt+3', hots.chat);
   useHotkey('Alt+4', hots.history);
+  useHotkey('Alt+6', hots.wordbook);
   useHotkey('Alt+5', hots.settings);
   // 动作类快捷键（纯应用内，避开全局 Alt+Q / Ctrl+Alt+O，防止重复触发）
   // 粘贴用 Ctrl+V（符合剪贴板习惯，与设置页/占位提示一致）
@@ -117,6 +120,7 @@ export function AppShell({
     ],
     [
       { key: 'history', label: '历史', kind: 'toggle', icon: <IconHistory />, title: '翻译历史（Alt+4）' },
+      { key: 'wordbook', label: '生词本', kind: 'toggle', icon: <IconWordbook />, title: '生词本（Alt+6）' },
       { key: 'chat', label: '对话', kind: 'toggle', icon: <IconChat />, title: 'AI 助手（Alt+3）' },
     ],
   ];
