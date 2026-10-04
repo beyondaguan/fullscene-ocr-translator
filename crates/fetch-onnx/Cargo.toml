@@ -1,0 +1,12 @@
+[package]
+name = "fetch-onnx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "下载 onnxruntime.dll 到 target/debug（纯 Rust，替代原 scripts/fetch_onnxruntime.py）"
+
+[dependencies]
+ureq = { workspace = true }
+zip = { workspace = true }
+anyhow = { workspace = true }

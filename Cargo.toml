@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/host", "crates/gui", "crates/platform", "crates/platform-windows"]
+members = ["crates/core", "crates/host", "crates/gui", "crates/platform", "crates/platform-windows", "crates/fetch-onnx"]
 
 [workspace.package]
 version = "1.8.0"
@@ -48,6 +48,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # 故正式版可完全替代镜像，且消除「本机绝对路径依赖」这一结构性缺陷
 # （镜像方案换机/换人/CI 全部编译不过）。
 ct2rs = { version = "0.10.1", features = ["sentencepiece"] }
+
+# ---- 构建工具：fetch-onnx 下载 onnxruntime.dll（zip 解压）----
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # ---- 错误处理 ----
 thiserror = "1"
