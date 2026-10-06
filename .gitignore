@@ -46,6 +46,5 @@ Thumbs.db
 desktop.ini
 
 # ---- WorkBuddy 本地数据 ----
-# e2e-edge-profile 是浏览器自动化跑出来的 profile（319 个缓存文件），必须排除
-.workbuddy/e2e-edge-profile/
-/.workbuddy/memory/
+# 整个 .workbuddy/ 是本地开发数据（调试截图/探针/记忆），不推送 GitHub
+/.workbuddy/
